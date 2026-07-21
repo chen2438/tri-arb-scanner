@@ -108,5 +108,6 @@ Binance 公共 REST 适配增量验收：
 - 完整 doctor 曾在 Binance `Retry-After` 等待超过 4 分钟后受控停止，因此新增每项 10 秒诊断上限；
   修复后完整运行会把 Binance 三项明确标为 `TimeoutError` 并继续完成 Bybit；MEXC、OKX 与 Bybit
   全部通过，Bybit 为 592 个市场/0 元数据拒绝、586 个报价/6 个逐市场拒绝。
-- 最新全量复验为 Pytest 180 项、Vitest 10 项通过，Ruff、Protobuf 漂移、TypeScript 与 Vite 生产构建
-  均通过；内置浏览器确认 BYBIT 筛选、状态卡和连接明细可用，桌面无横向溢出且控制台无警告或错误。
+- 审计修复后的最新全量复验为 Pytest 184 项、Vitest 12 项通过，Ruff、Protobuf 漂移、TypeScript 与
+  Vite 生产构建均通过；标准 wheel 已验证包含并可实际托管生产网页。内置浏览器确认历史分所筛选、
+  sequence 跳跃重连、价格保护参考价标签和四所共八条连接明细可用，控制台无警告或错误。
