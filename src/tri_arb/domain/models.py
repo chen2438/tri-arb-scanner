@@ -22,6 +22,7 @@ class RejectReason(StrEnum):
     BELOW_MIN_BASE = "below_min_base"
     BELOW_MIN_QUOTE = "below_min_quote"
     ABOVE_MAX_QUOTE = "above_max_quote"
+    ABOVE_MAX_BASE = "above_max_base"
     MISSING_PRICE_REFERENCE = "missing_price_reference"
     STALE_PRICE_REFERENCE = "stale_price_reference"
     PRICE_PROTECTION = "price_protection"
@@ -48,12 +49,13 @@ class MarketRules:
     quote_asset: str
     base_asset_precision: int
     min_base_quantity: Decimal
-    min_quote_amount: Decimal
-    max_quote_amount: Decimal
+    min_quote_amount: Decimal | None
+    max_quote_amount: Decimal | None
     taker_commission: Decimal
     allowed_sides: frozenset[ConversionSide]
     price_protection: PriceProtection | None = None
     exchange: str = "MEXC"
+    max_base_quantity: Decimal | None = None
 
     def __post_init__(self) -> None:
         if not self.symbol or not self.base_asset or not self.quote_asset or not self.exchange:
@@ -64,18 +66,33 @@ class MarketRules:
             raise ValueError("base and quote assets must differ")
         if not 0 <= self.base_asset_precision <= 30:
             raise ValueError("base asset precision must be between 0 and 30")
-        decimal_fields = (
-            self.min_base_quantity,
-            self.min_quote_amount,
-            self.max_quote_amount,
-            self.taker_commission,
+        decimal_fields = tuple(
+            value
+            for value in (
+                self.min_base_quantity,
+                self.min_quote_amount,
+                self.max_quote_amount,
+                self.taker_commission,
+                self.max_base_quantity,
+            )
+            if value is not None
         )
         if not all(value.is_finite() for value in decimal_fields):
             raise ValueError("market decimal rules must be finite")
-        if self.min_base_quantity <= ZERO or self.min_quote_amount <= ZERO:
-            raise ValueError("minimum order rules must be positive")
-        if self.max_quote_amount < self.min_quote_amount:
+        if self.min_base_quantity <= ZERO:
+            raise ValueError("minimum order rules: base quantity must be positive")
+        if self.min_quote_amount is not None and self.min_quote_amount <= ZERO:
+            raise ValueError("minimum quote order rule must be positive when present")
+        if self.max_quote_amount is not None and self.max_quote_amount <= ZERO:
+            raise ValueError("maximum quote order rule must be positive when present")
+        if (
+            self.min_quote_amount is not None
+            and self.max_quote_amount is not None
+            and self.max_quote_amount < self.min_quote_amount
+        ):
             raise ValueError("maximum quote amount cannot be below the minimum")
+        if self.max_base_quantity is not None and self.max_base_quantity < self.min_base_quantity:
+            raise ValueError("maximum base quantity cannot be below the minimum")
         if not ZERO <= self.taker_commission < Decimal("1"):
             raise ValueError("taker commission must be in [0, 1)")
         if not self.allowed_sides:

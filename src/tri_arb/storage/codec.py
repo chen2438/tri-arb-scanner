@@ -32,8 +32,15 @@ def _market(market: MarketRules) -> dict[str, Any]:
         "quote_asset": market.quote_asset,
         "base_asset_precision": market.base_asset_precision,
         "min_base_quantity": str(market.min_base_quantity),
-        "min_quote_amount": str(market.min_quote_amount),
-        "max_quote_amount": str(market.max_quote_amount),
+        "min_quote_amount": (
+            str(market.min_quote_amount) if market.min_quote_amount is not None else None
+        ),
+        "max_quote_amount": (
+            str(market.max_quote_amount) if market.max_quote_amount is not None else None
+        ),
+        "max_base_quantity": (
+            str(market.max_base_quantity) if market.max_base_quantity is not None else None
+        ),
         "taker_commission": str(market.taker_commission),
         "allowed_sides": sorted(side.value for side in market.allowed_sides),
         "price_protection": (
@@ -161,8 +168,16 @@ def _decode_market(payload: dict[str, Any]) -> MarketRules:
         quote_asset=payload["quote_asset"],
         base_asset_precision=payload["base_asset_precision"],
         min_base_quantity=Decimal(payload["min_base_quantity"]),
-        min_quote_amount=Decimal(payload["min_quote_amount"]),
-        max_quote_amount=Decimal(payload["max_quote_amount"]),
+        min_quote_amount=(
+            Decimal(payload["min_quote_amount"])
+            if payload.get("min_quote_amount") is not None
+            else None
+        ),
+        max_quote_amount=(
+            Decimal(payload["max_quote_amount"])
+            if payload.get("max_quote_amount") is not None
+            else None
+        ),
         taker_commission=Decimal(payload["taker_commission"]),
         allowed_sides=frozenset(ConversionSide(side) for side in payload["allowed_sides"]),
         price_protection=(
@@ -171,6 +186,11 @@ def _decode_market(payload: dict[str, Any]) -> MarketRules:
                 Decimal(protection["max_sell_deviation"]),
             )
             if protection is not None
+            else None
+        ),
+        max_base_quantity=(
+            Decimal(payload["max_base_quantity"])
+            if payload.get("max_base_quantity") is not None
             else None
         ),
     )

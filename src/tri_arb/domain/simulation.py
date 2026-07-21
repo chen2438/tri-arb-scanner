@@ -73,9 +73,11 @@ def _check_order_rules(edge: ConversionEdge, base_quantity: Decimal, quote_amoun
     rules = edge.market
     if base_quantity < rules.min_base_quantity:
         raise _Rejected(RejectReason.BELOW_MIN_BASE)
-    if quote_amount < rules.min_quote_amount:
+    if rules.max_base_quantity is not None and base_quantity > rules.max_base_quantity:
+        raise _Rejected(RejectReason.ABOVE_MAX_BASE)
+    if rules.min_quote_amount is not None and quote_amount < rules.min_quote_amount:
         raise _Rejected(RejectReason.BELOW_MIN_QUOTE)
-    if quote_amount > rules.max_quote_amount:
+    if rules.max_quote_amount is not None and quote_amount > rules.max_quote_amount:
         raise _Rejected(RejectReason.ABOVE_MAX_QUOTE)
 
 

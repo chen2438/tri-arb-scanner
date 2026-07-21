@@ -18,6 +18,7 @@ const rejectReasonLabel: Record<string, string> = {
   below_min_base: "低于最小数量",
   below_min_quote: "低于最小金额",
   above_max_quote: "超过最大金额",
+  above_max_base: "超过最大数量",
 };
 
 const connectionLabel = {
