@@ -10,6 +10,7 @@ import type { Opportunity, PublicConfig, SocketMessage } from "./types";
 
 type HistoryResponse = { items: Opportunity[]; next_cursor: string | null };
 type HistoryFilters = { anchor: string; exchange: string };
+export const SEQUENCE_GAP_CLOSE_CODE = 4000;
 
 export function buildHistoryQuery(
   filters: HistoryFilters,
@@ -154,7 +155,9 @@ export function useScanner(historyFilters: HistoryFilters) {
   }, [loadHistory]);
 
   useEffect(() => {
-    if (live.resyncRequired) socketRef.current?.close(1012, "sequence gap");
+    if (live.resyncRequired) {
+      socketRef.current?.close(SEQUENCE_GAP_CLOSE_CODE, "sequence gap");
+    }
   }, [live.resyncRequired]);
 
   const toggleSound = () => {
