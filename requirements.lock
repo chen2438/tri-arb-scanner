@@ -23,6 +23,10 @@ click==8.4.2
     # via uvicorn
 fastapi==0.139.2
     # via tri-arb-scanner (pyproject.toml)
+grpcio==1.82.1
+    # via grpcio-tools
+grpcio-tools==1.82.1
+    # via tri-arb-scanner (pyproject.toml)
 h11==0.16.0
     # via
     #   httpcore
@@ -44,7 +48,9 @@ packaging==26.2
 pluggy==1.6.0
     # via pytest
 protobuf==7.35.1
-    # via tri-arb-scanner (pyproject.toml)
+    # via
+    #   grpcio-tools
+    #   tri-arb-scanner (pyproject.toml)
 pydantic==2.13.4
     # via
     #   fastapi
@@ -76,6 +82,7 @@ starlette==1.3.1
 typing-extensions==4.16.0
     # via
     #   fastapi
+    #   grpcio
     #   pydantic
     #   pydantic-core
     #   sqlalchemy
@@ -95,3 +102,6 @@ websockets==16.1.1
     # via
     #   tri-arb-scanner (pyproject.toml)
     #   uvicorn
+
+# The following packages are considered to be unsafe in a requirements file:
+# setuptools

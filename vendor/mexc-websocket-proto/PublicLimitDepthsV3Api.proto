@@ -1,0 +1,23 @@
+// Source: mexcdevelop/websocket-proto commit
+// 7b8ac7a6681f28551612a5a7cefbb7e09b56bb85
+// Channel: spot@public.limit.depth.v3.api.pb
+
+syntax = "proto3";
+
+option java_package = "com.mxc.push.common.protobuf";
+option optimize_for = SPEED;
+option java_multiple_files = true;
+option java_outer_classname = "PublicLimitDepthsV3ApiProto";
+
+message PublicLimitDepthsV3Api {
+  repeated PublicLimitDepthV3ApiItem asks = 1;
+  repeated PublicLimitDepthV3ApiItem bids = 2;
+  string eventType = 3;
+  string version = 4;
+  int64 lastOrderCreateTime = 5;
+}
+
+message PublicLimitDepthV3ApiItem {
+  string price = 1;
+  string quantity = 2;
+}

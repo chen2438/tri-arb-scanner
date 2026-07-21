@@ -1,0 +1,27 @@
+// Derived from mexcdevelop/websocket-proto commit
+// 7b8ac7a6681f28551612a5a7cefbb7e09b56bb85.
+// Modified by Tri-Arb Scanner: unrelated public and all private message fields
+// were removed, retaining the original wire numbers needed for read-only
+// partial-depth decoding. Unknown protobuf fields remain safely ignored.
+
+syntax = "proto3";
+
+import "PublicLimitDepthsV3Api.proto";
+
+option java_package = "com.mxc.push.common.protobuf";
+option optimize_for = SPEED;
+option java_multiple_files = true;
+option java_outer_classname = "PushDataV3ApiWrapperProto";
+
+message PushDataV3ApiWrapper {
+  string channel = 1;
+
+  oneof body {
+    PublicLimitDepthsV3Api publicLimitDepths = 303;
+  }
+
+  optional string symbol = 3;
+  optional string symbolId = 4;
+  optional int64 createTime = 5;
+  optional int64 sendTime = 6;
+}

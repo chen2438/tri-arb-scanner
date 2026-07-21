@@ -40,6 +40,8 @@ jobs:
           pip install -e . --no-deps
       - name: Ruff
         run: ruff check .
+      - name: Verify generated MEXC protobuf
+        run: python scripts/generate_mexc_proto.py --check
       - name: Pytest
         run: pytest -vv --tb=short
 
