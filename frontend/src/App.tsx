@@ -259,7 +259,7 @@ export default function App() {
       </header>
 
       <section className="intro">
-        <div><p className="eyebrow">MEXC + OKX + BINANCE SPOT · READ ONLY</p><h1>三角套利扫描器</h1><p>独立扫描 MEXC、OKX 与 Binance 的 USDT、USDC、USD1 闭环，候选路径再用各自实时订单簿逐腿模拟。所有收益均为预估，不执行交易。</p></div>
+        <div><p className="eyebrow">MEXC + OKX + BINANCE + BYBIT SPOT · READ ONLY</p><h1>三角套利扫描器</h1><p>独立扫描 MEXC、OKX、Binance 与 Bybit 的 USDT、USDC、USD1 闭环，候选路径再用各自实时订单簿逐腿模拟。所有收益均为预估，不执行交易。</p></div>
         <div className="intro-badge"><span>当前阶段</span><strong>{status?.phase ?? "初始化"}</strong></div>
       </section>
 
@@ -277,7 +277,7 @@ export default function App() {
       </nav>
 
       <section className="workspace">
-        {(tab === "live" || tab === "history") && <div className="filter-bar"><label className="anchor-filter">交易所<select aria-label="交易所" value={exchangeFilter} onChange={(event) => setExchangeFilter(event.target.value)}><option value="ALL">全部</option><option value="MEXC">MEXC</option>{scanner.config?.okx_enabled && <option value="OKX">OKX</option>}{scanner.config?.binance_enabled && <option value="BINANCE">BINANCE</option>}</select></label><label className="anchor-filter">锚定资产<select value={anchorFilter} onChange={(event) => setAnchorFilter(event.target.value)}><option value="ALL">全部</option>{scanner.config?.anchor_assets.map((anchor) => <option value={anchor} key={anchor}>{anchor}</option>)}</select></label></div>}
+        {(tab === "live" || tab === "history") && <div className="filter-bar"><label className="anchor-filter">交易所<select aria-label="交易所" value={exchangeFilter} onChange={(event) => setExchangeFilter(event.target.value)}><option value="ALL">全部</option><option value="MEXC">MEXC</option>{scanner.config?.okx_enabled && <option value="OKX">OKX</option>}{scanner.config?.binance_enabled && <option value="BINANCE">BINANCE</option>}{scanner.config?.bybit_enabled && <option value="BYBIT">BYBIT</option>}</select></label><label className="anchor-filter">锚定资产<select value={anchorFilter} onChange={(event) => setAnchorFilter(event.target.value)}><option value="ALL">全部</option>{scanner.config?.anchor_assets.map((anchor) => <option value={anchor} key={anchor}>{anchor}</option>)}</select></label></div>}
         {tab === "live" && <OpportunityTable opportunities={filterOpportunities(scanner.live.opportunities)} />}
         {tab === "diagnostics" && <DiagnosticsPanel diagnostics={status?.diagnostics ?? null} />}
         {tab === "history" && <>{scanner.historyError && <p className="inline-error" role="alert">{scanner.historyError}</p>}<OpportunityTable opportunities={filterOpportunities(scanner.history)} history />{scanner.historyCursor && <button className="load-more" type="button" disabled={scanner.historyLoading} onClick={scanner.loadMoreHistory}>{scanner.historyLoading ? "正在加载…" : "加载更多历史"}</button>}</>}

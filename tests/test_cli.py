@@ -5,6 +5,7 @@ from tri_arb.cli import main
 from tri_arb.config import Settings
 from tri_arb.doctor import Diagnostic, run_diagnostics
 from tri_arb.exchange.binance import BinanceRestClient
+from tri_arb.exchange.bybit import BybitRestClient
 from tri_arb.exchange.mexc import MexcRestClient
 from tri_arb.exchange.okx import OkxRestClient
 
@@ -41,6 +42,17 @@ async def test_doctor_checks_database_protobuf_and_all_public_rest_endpoints() -
         }
         return httpx.Response(200, json=payloads[request.url.path])
 
+    def bybit_handler(request: httpx.Request) -> httpx.Response:
+        results = {
+            "/v5/market/time": {"timeSecond": "1"},
+            "/v5/market/instruments-info": {"category": "spot", "list": []},
+            "/v5/market/tickers": {"category": "spot", "list": []},
+        }
+        return httpx.Response(
+            200,
+            json={"retCode": 0, "retMsg": "OK", "result": results[request.url.path]},
+        )
+
     times = iter([1_000, 1_020, 1_030])
     async with httpx.AsyncClient(
         base_url="https://api.mexc.test",
@@ -52,6 +64,10 @@ async def test_doctor_checks_database_protobuf_and_all_public_rest_endpoints() -
         binance_http_client = httpx.AsyncClient(
             base_url="https://api.binance.test",
             transport=httpx.MockTransport(binance_handler),
+        )
+        bybit_http_client = httpx.AsyncClient(
+            base_url="https://api.bybit.test",
+            transport=httpx.MockTransport(bybit_handler),
         )
         rest_client = MexcRestClient(
             "https://unused.test",
@@ -76,14 +92,24 @@ async def test_doctor_checks_database_protobuf_and_all_public_rest_endpoints() -
                 retry_delays=(),
                 now_ms=lambda: next(binance_times),
             )
+            bybit_times = iter([1_000, 1_020, 1_030])
+            bybit_rest_client = BybitRestClient(
+                "https://unused.test",
+                taker_commission=Settings(_env_file=None).bybit_taker_commission,
+                client=bybit_http_client,
+                retry_delays=(),
+                now_ms=lambda: next(bybit_times),
+            )
             results = await run_diagnostics(
                 Settings(database_url="sqlite+aiosqlite:///:memory:", _env_file=None),
                 rest_client=rest_client,
                 okx_rest_client=okx_rest_client,
                 binance_rest_client=binance_rest_client,
+                bybit_rest_client=bybit_rest_client,
             )
         finally:
             await binance_http_client.aclose()
+            await bybit_http_client.aclose()
 
     assert [result.name for result in results] == [
         "configuration",
@@ -99,6 +125,9 @@ async def test_doctor_checks_database_protobuf_and_all_public_rest_endpoints() -
         "binance time",
         "binance exchangeInfo",
         "binance tickers",
+        "bybit time",
+        "bybit instruments",
+        "bybit tickers",
     ]
     assert all(result.ok for result in results)
 

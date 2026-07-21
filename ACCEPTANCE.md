@@ -93,3 +93,20 @@ Binance 公共 REST 适配增量验收：
   均通过；`tri-arb doctor` 新增 Binance time/exchangeInfo/tickers 后，三交易所公共 REST 检查全部通过。
 - 内置浏览器真实三交易所页面显示 `ready`、Binance 筛选器、三组分所状态及全部深度连接；桌面宽度无
   横向溢出，控制台无错误或警告。
+
+## Bybit 增量验收
+
+- 真实公共 V5 REST 归一化 592 个可交易现货市场且元数据 0 拒绝；586 组报价可用，6 个当前缺少买一价
+  的法币市场被逐市场隔离。BTCUSDT 公共 `price-limit` 与 50 档 REST 深度均成功解析。
+- 真实 `orderbook.200.BTCUSDT` 连续版本 `47991629:111785320135`、`47991630:111785320155`、
+  `47991631:111785320170` 均重建出 20 bids + 20 asks，并保留顶层撮合时间 `cts`；连接和订阅保持第 1 代。
+- Bybit 独立服务达到 `ready`：592 个市场、624 条路径、30 个核心市场、92 条核心覆盖路径，30 个价格
+  限制全部收齐，29 本有效深度簿保持第 1 代；1 个单边或空 snapshot 被单独隔离，没有触发分片重连。
+- 四所同进程验收中，MEXC、OKX、Bybit 达到 `ready`；Bybit 状态抽样为 592 个市场、624 条路径、
+  43/44 本深度簿/订阅、41 份价格限制、两分片第 1 代。Binance 公共 API 返回限频并保持 `initializing`，
+  因此本轮不记为“四所同时 ready”。
+- 完整 doctor 曾在 Binance `Retry-After` 等待超过 4 分钟后受控停止，因此新增每项 10 秒诊断上限；
+  修复后完整运行会把 Binance 三项明确标为 `TimeoutError` 并继续完成 Bybit；MEXC、OKX 与 Bybit
+  全部通过，Bybit 为 592 个市场/0 元数据拒绝、586 个报价/6 个逐市场拒绝。
+- 最新全量复验为 Pytest 180 项、Vitest 10 项通过，Ruff、Protobuf 漂移、TypeScript 与 Vite 生产构建
+  均通过；内置浏览器确认 BYBIT 筛选、状态卡和连接明细可用，桌面无横向溢出且控制台无警告或错误。

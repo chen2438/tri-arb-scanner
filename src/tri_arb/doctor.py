@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -10,9 +11,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from tri_arb.config import Settings
 from tri_arb.exchange.binance import BinanceRestClient
+from tri_arb.exchange.bybit import BybitRestClient
 from tri_arb.exchange.mexc import MexcRestClient, decode_depth_frame, depth_channel
 from tri_arb.exchange.mexc.proto.PushDataV3ApiWrapper_pb2 import PushDataV3ApiWrapper
 from tri_arb.exchange.okx import OkxRestClient
+
+DIAGNOSTIC_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +38,8 @@ async def _capture[T](
     describe: Callable[[T], str],
 ) -> None:
     try:
-        value = await operation()
+        async with asyncio.timeout(DIAGNOSTIC_TIMEOUT_SECONDS):
+            value = await operation()
     except Exception as error:
         results.append(Diagnostic(name, False, _safe_error(error)))
     else:
@@ -78,6 +83,7 @@ async def run_diagnostics(
     rest_client: MexcRestClient | None = None,
     okx_rest_client: OkxRestClient | None = None,
     binance_rest_client: BinanceRestClient | None = None,
+    bybit_rest_client: BybitRestClient | None = None,
 ) -> tuple[Diagnostic, ...]:
     """Run checks without accessing private exchange APIs or changing scanner records."""
 
@@ -183,4 +189,36 @@ async def run_diagnostics(
         finally:
             if owns_binance_client:
                 await binance_client.aclose()
+    if settings.bybit_enabled:
+        bybit_client = bybit_rest_client or BybitRestClient(
+            settings.bybit_rest_url,
+            taker_commission=settings.bybit_taker_commission,
+        )
+        owns_bybit_client = bybit_rest_client is None
+        try:
+            await _capture(
+                results,
+                "bybit time",
+                bybit_client.calibrate_clock,
+                lambda clock: (
+                    f"offset {clock.offset_ms} ms; round trip {clock.round_trip_ms} ms"
+                ),
+            )
+            await _capture(
+                results,
+                "bybit instruments",
+                bybit_client.instruments,
+                lambda info: f"{len(info.markets)} markets; {len(info.rejections)} rejected",
+            )
+            await _capture(
+                results,
+                "bybit tickers",
+                bybit_client.tickers,
+                lambda tickers: (
+                    f"{len(tickers.tickers)} tickers; {len(tickers.rejections)} rejected"
+                ),
+            )
+        finally:
+            if owns_bybit_client:
+                await bybit_client.aclose()
     return tuple(results)

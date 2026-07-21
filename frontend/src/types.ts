@@ -139,6 +139,8 @@ export type PublicConfig = {
   okx_taker_commission: string;
   binance_enabled: boolean;
   binance_taker_commission: string;
+  bybit_enabled: boolean;
+  bybit_taker_commission: string;
 };
 
 export type SocketMessage = {
