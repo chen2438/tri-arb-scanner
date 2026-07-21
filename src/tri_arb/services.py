@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from tri_arb.config import Settings
+from tri_arb.exchange.binance.market_data import BinanceMarketDataService
 from tri_arb.exchange.okx.market_data import OkxMarketDataService
 from tri_arb.market_data import MarketDataService, MarketDataSnapshot
 from tri_arb.presentation import opportunity_to_public, utc_iso
@@ -88,6 +89,7 @@ class ApplicationServices:
         *,
         market_data: MarketDataService | None = None,
         okx_market_data: OkxMarketDataService | None = None,
+        binance_market_data: BinanceMarketDataService | None = None,
         scanner_runtime: ScannerRuntime | None = None,
         now_ms=lambda: time.time_ns() // 1_000_000,
     ) -> None:
@@ -99,9 +101,12 @@ class ApplicationServices:
         self.okx_market_data = okx_market_data
         if self.okx_market_data is None and not injected_mexc and settings.okx_enabled:
             self.okx_market_data = OkxMarketDataService(settings, now_ms=now_ms)
+        self.binance_market_data = binance_market_data
+        if self.binance_market_data is None and not injected_mexc and settings.binance_enabled:
+            self.binance_market_data = BinanceMarketDataService(settings, now_ms=now_ms)
         self.market_data_services: tuple[MarketDataSource, ...] = tuple(
             source
-            for source in (self.market_data, self.okx_market_data)
+            for source in (self.market_data, self.okx_market_data, self.binance_market_data)
             if source is not None
         )
         self.scanner_runtime = scanner_runtime or ScannerRuntime(

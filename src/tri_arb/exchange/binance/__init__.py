@@ -8,6 +8,7 @@ from tri_arb.exchange.binance.depth import (
     normalize_depth_event,
     normalize_depth_snapshot,
 )
+from tri_arb.exchange.binance.market_data import BinanceMarketDataService
 from tri_arb.exchange.binance.metadata import (
     BinanceMetadataError,
     BinanceMetadataRejection,
@@ -32,6 +33,7 @@ __all__ = [
     "BinanceDepthEvent",
     "BinanceDepthSnapshot",
     "BinanceDepthWebSocketShard",
+    "BinanceMarketDataService",
     "BinanceMetadataError",
     "BinanceMetadataRejection",
     "BinanceOrderBookState",

@@ -17,6 +17,8 @@ def test_defaults_match_documented_safe_configuration() -> None:
     assert settings.depth_levels == 20
     assert settings.okx_enabled is True
     assert settings.okx_taker_commission == Decimal("0.0015")
+    assert settings.binance_enabled is True
+    assert settings.binance_taker_commission == Decimal("0.001")
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.10", "scanner.example"])
@@ -40,6 +42,8 @@ def test_allows_insecure_upstream_only_for_loopback() -> None:
         mexc_ws_url="ws://localhost:9001/ws/",
         okx_rest_url="http://localhost:9002/",
         okx_ws_url="ws://127.0.0.1:9003/ws/",
+        binance_rest_url="http://localhost:9004/",
+        binance_ws_url="ws://127.0.0.1:9005/ws/",
         _env_file=None,
     )
 
@@ -47,6 +51,8 @@ def test_allows_insecure_upstream_only_for_loopback() -> None:
     assert local.mexc_ws_url == "ws://localhost:9001/ws"
     assert local.okx_rest_url == "http://localhost:9002"
     assert local.okx_ws_url == "ws://127.0.0.1:9003/ws"
+    assert local.binance_rest_url == "http://localhost:9004"
+    assert local.binance_ws_url == "ws://127.0.0.1:9005/ws"
     with pytest.raises(ValidationError, match="must use https"):
         Settings(mexc_rest_url="http://api.mexc.com", _env_file=None)
     with pytest.raises(ValidationError, match="must use wss"):
@@ -91,8 +97,14 @@ def test_public_configuration_preserves_decimals_as_strings() -> None:
     assert payload["safety_buffer_bps"] == "5"
     assert payload["anchor_assets"] == ["USDT", "USDC", "USD1"]
     assert payload["okx_taker_commission"] == "0.0015"
+    assert payload["binance_taker_commission"] == "0.001"
 
 
 def test_rejects_okx_fee_below_public_regular_user_maximum() -> None:
     with pytest.raises(ValidationError, match=r"greater than or equal to 0.0015"):
         Settings(okx_taker_commission="0.001", _env_file=None)
+
+
+def test_rejects_binance_fee_below_public_standard_rate() -> None:
+    with pytest.raises(ValidationError, match=r"greater than or equal to 0.001"):
+        Settings(binance_taker_commission="0.0009", _env_file=None)

@@ -137,6 +137,8 @@ export type PublicConfig = {
   depth_levels: number;
   okx_enabled: boolean;
   okx_taker_commission: string;
+  binance_enabled: boolean;
+  binance_taker_commission: string;
 };
 
 export type SocketMessage = {
