@@ -145,6 +145,33 @@ class OrderBook:
 
 
 @dataclass(frozen=True, slots=True)
+class BookTicker:
+    """REST top-of-book input used only for broad route screening."""
+
+    symbol: str
+    bid_price: Decimal
+    bid_quantity: Decimal
+    ask_price: Decimal
+    ask_quantity: Decimal
+    received_time_ms: int
+
+    def __post_init__(self) -> None:
+        if (
+            not self.symbol
+            or self.symbol != self.symbol.strip()
+            or self.symbol != self.symbol.upper()
+        ):
+            raise ValueError("invalid book ticker symbol")
+        values = (self.bid_price, self.bid_quantity, self.ask_price, self.ask_quantity)
+        if not all(value.is_finite() and value > ZERO for value in values):
+            raise ValueError("book ticker prices and quantities must be finite and positive")
+        if self.bid_price >= self.ask_price:
+            raise ValueError("book ticker must have a positive spread")
+        if self.received_time_ms <= 0:
+            raise ValueError("book ticker receive time must be positive")
+
+
+@dataclass(frozen=True, slots=True)
 class LegSimulation:
     symbol: str
     side: ConversionSide
