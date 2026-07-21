@@ -9,6 +9,7 @@ import uvicorn
 
 from tri_arb.api import create_app
 from tri_arb.config import load_settings
+from tri_arb.observability import configure_logging
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -31,5 +32,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("market data: not implemented")
         return 0
 
+    configure_logging()
     uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
     return 0

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -23,10 +24,12 @@ from tri_arb.exchange.mexc import (
     WebSocketStatus,
     reconcile_subscriptions,
 )
+from tri_arb.observability import get_logger, log_event
 
 METADATA_INTERVAL_SECONDS = 300.0
 CLOCK_INTERVAL_SECONDS = 60.0
 SUBSCRIPTION_INTERVAL_SECONDS = 5.0
+LOGGER = get_logger(__name__)
 
 
 class MarketDataPhase(StrEnum):
@@ -115,6 +118,14 @@ class MarketDataService:
     async def _record_error(self, component: str, error: Exception) -> None:
         async with self._lock:
             self._errors[component] = f"{type(error).__name__}: {error}"
+        log_event(
+            LOGGER,
+            "market_data.error",
+            level=logging.WARNING,
+            component=component,
+            error_type=type(error).__name__,
+            error=str(error),
+        )
 
     async def _clear_error(self, component: str) -> None:
         async with self._lock:
@@ -145,6 +156,13 @@ class MarketDataService:
             }
             self._metadata_rejections = len(result.rejections)
             self._last_metadata_ms = self._now_ms()
+        log_event(
+            LOGGER,
+            "market_data.metadata_refreshed",
+            market_count=len(result.markets),
+            route_count=len(routes),
+            metadata_rejection_count=len(result.rejections),
+        )
         return result
 
     async def calibrate_clock(self) -> ServerClock:
@@ -231,6 +249,16 @@ class MarketDataService:
                     if symbol not in shard_symbols
                 }
             self._websocket_statuses[status.shard_id] = status
+        if previous is None or previous.state != status.state or previous.error != status.error:
+            log_event(
+                LOGGER,
+                "market_data.websocket_state",
+                level=logging.WARNING if status.state is WebSocketState.BACKOFF else logging.INFO,
+                shard_id=status.shard_id,
+                state=status.state.value,
+                subscription_count=len(status.subscriptions),
+                error=status.error,
+            )
 
     def _phase(self) -> MarketDataPhase:
         if self._stopped:

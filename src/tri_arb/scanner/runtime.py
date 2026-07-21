@@ -9,11 +9,13 @@ from dataclasses import dataclass
 
 from tri_arb.config import Settings
 from tri_arb.market_data import MarketDataService
+from tri_arb.observability import get_logger, log_event
 from tri_arb.scanner.engine import ScannerCycle, ScannerEngine
 from tri_arb.scanner.lifecycle import LifecycleEvent, OpportunityLifecycle, OpportunityTracker
 from tri_arb.storage.database import OpportunityStore
 
 DAY_MS = 24 * 60 * 60 * 1_000
+LOGGER = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,12 +65,20 @@ class ScannerRuntime:
         now = self._now_ms()
         self._restart_closed_count = await self._store.start(started_at_ms=now)
         try:
-            await self._store.cleanup(max(1, now - self._settings.history_retention_days * DAY_MS))
+            deleted = await self._store.cleanup(
+                max(1, now - self._settings.history_retention_days * DAY_MS)
+            )
         except Exception:
             await self._store.stop()
             raise
         self._last_cleanup_ms = now
         self._started = True
+        log_event(
+            LOGGER,
+            "scanner.started",
+            restart_closed_count=self._restart_closed_count,
+            deleted_count=deleted,
+        )
 
     def active(self) -> tuple[OpportunityLifecycle, ...]:
         return self._tracker.active()
@@ -83,6 +93,20 @@ class ScannerRuntime:
             last_cleanup_ms=self._last_cleanup_ms,
         )
 
+    def _log_lifecycle_events(self, lifecycle_events: tuple[LifecycleEvent, ...]) -> None:
+        for lifecycle_event in lifecycle_events:
+            lifecycle = lifecycle_event.lifecycle
+            log_event(
+                LOGGER,
+                "scanner.lifecycle_event",
+                lifecycle_id=lifecycle.lifecycle_id,
+                route_id=lifecycle.route_id,
+                event_type=lifecycle_event.event_type.value,
+                close_reason=lifecycle.close_reason.value if lifecycle.close_reason else None,
+                net_return_bps=lifecycle.current_simulation.net_return_bps,
+                active_count=len(self._tracker.active()),
+            )
+
     async def process_cycle(self, cycle: ScannerCycle) -> tuple[LifecycleEvent, ...]:
         if not self._started:
             raise RuntimeError("scanner runtime is not started")
@@ -90,12 +114,16 @@ class ScannerRuntime:
         await self._store.record_events(lifecycle_events)
         self._last_cycle_ms = cycle.evaluated_at_ms
         self._event_count += len(lifecycle_events)
+        self._log_lifecycle_events(lifecycle_events)
         if lifecycle_events:
             await self._on_events(lifecycle_events)
         now = self._now_ms()
         if self._last_cleanup_ms is None or now - self._last_cleanup_ms >= DAY_MS:
-            await self._store.cleanup(max(1, now - self._settings.history_retention_days * DAY_MS))
+            deleted = await self._store.cleanup(
+                max(1, now - self._settings.history_retention_days * DAY_MS)
+            )
             self._last_cleanup_ms = now
+            log_event(LOGGER, "scanner.retention_cleanup", deleted_count=deleted)
         return lifecycle_events
 
     async def cycle(self, market_data: MarketDataService) -> ScannerCycle:
@@ -124,8 +152,10 @@ class ScannerRuntime:
         try:
             await self._store.record_events(closing_events)
             self._event_count += len(closing_events)
+            self._log_lifecycle_events(closing_events)
             if closing_events:
                 await self._on_events(closing_events)
         finally:
             await self._store.stop()
             self._started = False
+            log_event(LOGGER, "scanner.stopped", active_count=0)
