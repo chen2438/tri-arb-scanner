@@ -35,6 +35,26 @@ async def test_cycle_updates_shortlist_without_publishing_unconfirmed_routes() -
 
 
 @pytest.mark.asyncio
+async def test_cycle_excludes_expired_rest_tickers_from_broad_screen() -> None:
+    settings = Settings(mexc_ws_url="ws://127.0.0.1:1/ws", _env_file=None)
+    market_data = MarketDataService(
+        settings,
+        rest_client=FakeRestClient(),  # type: ignore[arg-type]
+        now_ms=lambda: 1_000,
+    )
+    await market_data.refresh_metadata()
+    await market_data.refresh_tickers()
+
+    cycle = ScannerEngine(settings, now_ms=lambda: 6_001).evaluate(
+        await market_data.snapshot()
+    )
+
+    assert cycle.broad_candidates == ()
+    assert cycle.broad_screen is not None
+    assert cycle.broad_screen.priced_route_count == 0
+
+
+@pytest.mark.asyncio
 async def test_multi_exchange_cycle_keeps_venue_shortlists_and_combines_diagnostics() -> None:
     settings = Settings(mexc_ws_url="ws://127.0.0.1:1/ws", _env_file=None)
     mexc = MarketDataService(

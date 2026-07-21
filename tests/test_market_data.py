@@ -103,6 +103,24 @@ async def test_builds_coherent_ready_snapshot_from_public_rest_inputs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ready_state_expires_when_rest_tickers_stop_refreshing() -> None:
+    current_ms = 1_000
+    service = MarketDataService(
+        Settings(mexc_ws_url="ws://127.0.0.1:1/ws", _env_file=None),
+        rest_client=FakeRestClient(),  # type: ignore[arg-type]
+        now_ms=lambda: current_ms,
+    )
+    await service.refresh_metadata()
+    await service.calibrate_clock()
+    await service.refresh_tickers()
+    assert (await service.snapshot()).status.phase is MarketDataPhase.READY
+
+    current_ms = 6_001
+
+    assert (await service.snapshot()).status.phase is MarketDataPhase.DEGRADED
+
+
+@pytest.mark.asyncio
 async def test_builds_routes_for_all_supported_anchor_assets() -> None:
     rest = FakeRestClient()
     rest.markets = (

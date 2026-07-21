@@ -37,6 +37,8 @@ from tri_arb.market_data import (
     MarketDataPhase,
     MarketDataSnapshot,
     MarketDataStatus,
+    is_fresh_timestamp,
+    ticker_freshness_ms,
 )
 from tri_arb.observability import get_logger, log_event
 
@@ -304,7 +306,13 @@ class OkxMarketDataService:
             ):
                 return MarketDataPhase.DEGRADED
         if self._markets and self._tickers and self._clock is not None:
-            return MarketDataPhase.READY
+            if is_fresh_timestamp(
+                self._last_ticker_ms,
+                now_ms=self._now_ms(),
+                max_age_ms=ticker_freshness_ms(self._settings),
+            ):
+                return MarketDataPhase.READY
+            return MarketDataPhase.DEGRADED
         return MarketDataPhase.INITIALIZING
 
     async def snapshot(self) -> MarketDataSnapshot:

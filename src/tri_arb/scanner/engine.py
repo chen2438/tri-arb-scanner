@@ -9,7 +9,12 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from tri_arb.config import Settings
-from tri_arb.market_data import MarketDataService, MarketDataSnapshot
+from tri_arb.market_data import (
+    MarketDataService,
+    MarketDataSnapshot,
+    is_fresh_timestamp,
+    ticker_freshness_ms,
+)
 from tri_arb.scanner.confirmation import (
     ConfirmationOutcome,
     ConfirmationRejectReason,
@@ -61,9 +66,19 @@ class ScannerEngine:
 
     def evaluate(self, snapshot: MarketDataSnapshot) -> ScannerCycle:
         evaluated_at_ms = self._now_ms()
+        max_ticker_age_ms = ticker_freshness_ms(self._settings)
+        fresh_tickers = {
+            symbol: ticker
+            for symbol, ticker in snapshot.tickers.items()
+            if is_fresh_timestamp(
+                ticker.received_time_ms,
+                now_ms=evaluated_at_ms,
+                max_age_ms=max_ticker_age_ms,
+            )
+        }
         broad_screen = screen_routes_multi_anchor(
             snapshot.routes,
-            snapshot.tickers,
+            fresh_tickers,
             {anchor: self._settings.notional for anchor in self._settings.anchor_assets},
             limit=self._settings.shortlist_routes,
         )

@@ -41,7 +41,18 @@ CLOCK_INTERVAL_SECONDS = 60.0
 SUBSCRIPTION_INTERVAL_SECONDS = 5.0
 PRICE_REFERENCE_INTERVAL_SECONDS = 10.0
 MARKET_ACTIVITY_INTERVAL_SECONDS = 300.0
+MIN_TICKER_FRESHNESS_MS = 5_000
 LOGGER = get_logger(__name__)
+
+
+def ticker_freshness_ms(settings: Settings) -> int:
+    """Return the maximum local age allowed for broad-screen REST quotes."""
+
+    return max(MIN_TICKER_FRESHNESS_MS, settings.book_ticker_interval_ms * 3)
+
+
+def is_fresh_timestamp(timestamp_ms: int | None, *, now_ms: int, max_age_ms: int) -> bool:
+    return timestamp_ms is not None and 0 <= now_ms - timestamp_ms <= max_age_ms
 
 
 class MarketDataPhase(StrEnum):
@@ -379,7 +390,13 @@ class MarketDataService:
             if status is None or status.state is not WebSocketState.CONNECTED:
                 return MarketDataPhase.DEGRADED
         if self._markets and self._tickers and self._clock is not None:
-            return MarketDataPhase.READY
+            if is_fresh_timestamp(
+                self._last_ticker_ms,
+                now_ms=self._now_ms(),
+                max_age_ms=ticker_freshness_ms(self._settings),
+            ):
+                return MarketDataPhase.READY
+            return MarketDataPhase.DEGRADED
         return MarketDataPhase.INITIALIZING
 
     async def snapshot(self) -> MarketDataSnapshot:

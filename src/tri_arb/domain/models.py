@@ -256,6 +256,7 @@ class BookTicker:
     ask_price: Decimal
     ask_quantity: Decimal
     received_time_ms: int
+    source_time_ms: int | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -271,6 +272,8 @@ class BookTicker:
             raise ValueError("book ticker must have a positive spread")
         if self.received_time_ms <= 0:
             raise ValueError("book ticker receive time must be positive")
+        if self.source_time_ms is not None and self.source_time_ms <= 0:
+            raise ValueError("book ticker source time must be positive when present")
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,6 +283,7 @@ class MarketActivity:
     symbol: str
     quote_volume: Decimal
     received_time_ms: int
+    source_time_ms: int | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -292,6 +296,8 @@ class MarketActivity:
             raise ValueError("market activity volume must be finite and non-negative")
         if self.received_time_ms <= 0:
             raise ValueError("market activity receive time must be positive")
+        if self.source_time_ms is not None and self.source_time_ms <= 0:
+            raise ValueError("market activity source time must be positive when present")
 
 
 @dataclass(frozen=True, slots=True)
