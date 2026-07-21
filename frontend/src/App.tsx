@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { Opportunity, ScannerDiagnostics, ScannerStatus } from "./types";
+import type { ExchangeStatus, Opportunity, ScannerDiagnostics, ScannerStatus } from "./types";
 import { useScanner } from "./useScanner";
 
 type Tab = "live" | "diagnostics" | "history" | "status";
@@ -68,14 +68,14 @@ function signed(value: string, suffix = ""): string {
 
 function RoutePath({ opportunity }: { opportunity: Opportunity }) {
   return (
-    <span className="route-path" aria-label={`套利路径 ${opportunity.assets.join(" 到 ")}`}>
+    <span className="route-wrap"><em className={`exchange-badge exchange-badge--${opportunity.exchange.toLowerCase()}`}>{opportunity.exchange}</em><span className="route-path" aria-label={`${opportunity.exchange} 套利路径 ${opportunity.assets.join(" 到 ")}`}>
       {opportunity.assets.map((asset, index) => (
         <span key={`${asset}-${index}`}>
           {index > 0 && <i aria-hidden="true">→</i>}
           <b>{asset}</b>
         </span>
       ))}
-    </span>
+    </span></span>
   );
 }
 
@@ -126,7 +126,7 @@ function OpportunityTable({ opportunities, history = false }: { opportunities: O
       <div className="empty-state">
         <span aria-hidden="true">△</span>
         <h2>{history ? "尚无已关闭机会" : "正在等待符合门槛的机会"}</h2>
-        <p>{history ? "机会生命周期关闭后会保留在这里。" : "仅展示经过 MEXC 20 档深度确认的真实候选，不生成演示数据。"}</p>
+        <p>{history ? "机会生命周期关闭后会保留在这里。" : "仅展示经过交易所 20 档深度确认的真实候选，不生成演示数据。"}</p>
       </div>
     );
   }
@@ -155,11 +155,17 @@ function OpportunityTable({ opportunities, history = false }: { opportunities: O
   );
 }
 
+function ExchangeStatusCard({ exchange }: { exchange: ExchangeStatus }) {
+  const age = (value: number | null) => value === null ? "未收到" : formatAge(value);
+  return <section className="status-card"><p className="section-kicker">{exchange.exchange} · {exchange.phase}</p><h2>{exchange.exchange} 公共行情</h2><dl className="status-list"><div><dt>市场 / 路径</dt><dd>{exchange.market_count} / {exchange.route_count}</dd></div><div><dt>全市场报价</dt><dd>{age(exchange.rest_ticker_age_ms)}</dd></div><div><dt>核心市场 / 覆盖</dt><dd>{exchange.core_market_count} / {exchange.core_route_count}</dd></div><div><dt>深度簿 / 订阅</dt><dd>{exchange.depth_book_count} / {exchange.subscription_count}</dd></div></dl>{exchange.websocket_connections.map((connection) => <div className="venue-connection" key={`${exchange.exchange}-${connection.shard_id}`}><span className={`status-dot status-dot--${connection.state.toLowerCase()}`} /><strong>分片 {connection.shard_id + 1}</strong><small>{connection.subscription_count} 个市场 · 第 {connection.generation} 代</small></div>)}{exchange.last_error && <p className="error-message">{exchange.last_error}</p>}</section>;
+}
+
 function StatusPanel({ status }: { status: ScannerStatus | null }) {
   if (!status) return <div className="empty-state"><h2>等待服务状态</h2><p>连接恢复后会自动显示行情链路详情。</p></div>;
   const age = (value: number | null) => value === null ? "未收到" : formatAge(value);
   return (
     <div className="status-layout">
+      {status.exchanges.map((exchange) => <ExchangeStatusCard exchange={exchange} key={exchange.exchange} />)}
       <section className="status-card">
         <p className="section-kicker">REST DATA AGE</p>
         <h2>公共 REST 行情</h2>
@@ -174,13 +180,13 @@ function StatusPanel({ status }: { status: ScannerStatus | null }) {
       </section>
       <section className="status-card">
         <p className="section-kicker">DEPTH STREAMS</p>
-        <h2>MEXC 深度连接</h2>
+        <h2>全部深度连接</h2>
         {status.websocket_connections.length === 0 ? <p className="muted">当前没有深度订阅。</p> : (
           <div className="shard-list">
             {status.websocket_connections.map((connection) => (
               <div key={connection.shard_id}>
                 <span className={`status-dot status-dot--${connection.state.toLowerCase()}`} />
-                <strong>分片 {connection.shard_id + 1}</strong>
+                <strong>{connection.exchange} 分片 {connection.shard_id + 1}</strong>
                 <span>{connection.state}</span>
                 <small>{connection.subscription_count} 个市场 · 第 {connection.generation} 代</small>
                 {connection.error && <em>{connection.error}</em>}
@@ -226,7 +232,7 @@ function DiagnosticsPanel({ diagnostics }: { diagnostics: ScannerDiagnostics | n
       </section>
       <section className="status-card"><p className="section-kicker">REJECTIONS</p><h2>本轮拒绝原因</h2>{rejections.length === 0 ? <p className="muted">本轮没有拒绝记录。</p> : <dl className="rejection-list">{rejections.map(([reason, count]) => <div key={reason}><dt>{rejectReasonLabel[reason] ?? reason}</dt><dd>{count}</dd></div>)}</dl>}</section>
       <section className="status-card"><p className="section-kicker">ONE HOUR</p><h2>精确收益分布</h2><dl className="rejection-list"><div><dt>负收益</dt><dd>{diagnostics.rolling_buckets.negative ?? 0}</dd></div><div><dt>0–5 bps</dt><dd>{diagnostics.rolling_buckets["0_to_5"] ?? 0}</dd></div><div><dt>5–10 bps</dt><dd>{diagnostics.rolling_buckets["5_to_10"] ?? 0}</dd></div><div><dt>10 bps–门槛</dt><dd>{diagnostics.rolling_buckets["10_to_threshold"] ?? 0}</dd></div><div><dt>达到机会门槛</dt><dd>{diagnostics.rolling_buckets.opportunity ?? 0}</dd></div></dl></section>
-      <section className="status-card status-card--wide"><p className="section-kicker">NEAR MISSES</p><h2>当前近似机会</h2>{diagnostics.near_misses.length === 0 ? <p className="muted">当前没有净收益介于 0 bps 与机会门槛之间、且通过深度确认的路径。</p> : <div className="near-miss-list">{diagnostics.near_misses.map((item) => <article key={item.route_id}><strong>{item.assets.join(" → ")}</strong><span>{signed(item.net_return_bps, " bps")}</span><small>预估 {signed(item.estimated_profit)} · 容量 {item.confirmed_capacity} · 行情 {formatAge(item.market_age_ms)}</small></article>)}</div>}</section>
+      <section className="status-card status-card--wide"><p className="section-kicker">NEAR MISSES</p><h2>当前近似机会</h2>{diagnostics.near_misses.length === 0 ? <p className="muted">当前没有净收益介于 0 bps 与机会门槛之间、且通过深度确认的路径。</p> : <div className="near-miss-list">{diagnostics.near_misses.map((item) => <article key={item.route_id}><strong><em className={`exchange-badge exchange-badge--${item.exchange.toLowerCase()}`}>{item.exchange}</em>{item.assets.join(" → ")}</strong><span>{signed(item.net_return_bps, " bps")}</span><small>预估 {signed(item.estimated_profit)} · 容量 {item.confirmed_capacity} · 行情 {formatAge(item.market_age_ms)}</small></article>)}</div>}</section>
     </div>
   );
 }
@@ -235,9 +241,10 @@ export default function App() {
   const scanner = useScanner();
   const [tab, setTab] = useState<Tab>("live");
   const [anchorFilter, setAnchorFilter] = useState("ALL");
+  const [exchangeFilter, setExchangeFilter] = useState("ALL");
   const status = scanner.live.status;
   const degraded = scanner.live.connection !== "connected" || (status !== null && !status.ready);
-  const filterByAnchor = (values: Opportunity[]) => anchorFilter === "ALL" ? values : values.filter((item) => item.anchor_asset === anchorFilter);
+  const filterOpportunities = (values: Opportunity[]) => values.filter((item) => (anchorFilter === "ALL" || item.anchor_asset === anchorFilter) && (exchangeFilter === "ALL" || item.exchange === exchangeFilter));
 
   return (
     <main className="shell">
@@ -250,7 +257,7 @@ export default function App() {
       </header>
 
       <section className="intro">
-        <div><p className="eyebrow">MEXC SPOT · READ ONLY</p><h1>三角套利扫描器</h1><p>同时扫描 USDT、USDC 与 USD1 闭环，候选路径再用实时订单簿逐腿模拟。所有收益均为预估，不执行交易。</p></div>
+        <div><p className="eyebrow">MEXC + OKX SPOT · READ ONLY</p><h1>三角套利扫描器</h1><p>独立扫描 MEXC 与 OKX 的 USDT、USDC、USD1 闭环，候选路径再用各自实时订单簿逐腿模拟。所有收益均为预估，不执行交易。</p></div>
         <div className="intro-badge"><span>当前阶段</span><strong>{status?.phase ?? "初始化"}</strong></div>
       </section>
 
@@ -268,10 +275,10 @@ export default function App() {
       </nav>
 
       <section className="workspace">
-        {(tab === "live" || tab === "history") && <label className="anchor-filter">锚定资产<select value={anchorFilter} onChange={(event) => setAnchorFilter(event.target.value)}><option value="ALL">全部</option>{scanner.config?.anchor_assets.map((anchor) => <option value={anchor} key={anchor}>{anchor}</option>)}</select></label>}
-        {tab === "live" && <OpportunityTable opportunities={filterByAnchor(scanner.live.opportunities)} />}
+        {(tab === "live" || tab === "history") && <div className="filter-bar"><label className="anchor-filter">交易所<select aria-label="交易所" value={exchangeFilter} onChange={(event) => setExchangeFilter(event.target.value)}><option value="ALL">全部</option><option value="MEXC">MEXC</option>{scanner.config?.okx_enabled && <option value="OKX">OKX</option>}</select></label><label className="anchor-filter">锚定资产<select value={anchorFilter} onChange={(event) => setAnchorFilter(event.target.value)}><option value="ALL">全部</option>{scanner.config?.anchor_assets.map((anchor) => <option value={anchor} key={anchor}>{anchor}</option>)}</select></label></div>}
+        {tab === "live" && <OpportunityTable opportunities={filterOpportunities(scanner.live.opportunities)} />}
         {tab === "diagnostics" && <DiagnosticsPanel diagnostics={status?.diagnostics ?? null} />}
-        {tab === "history" && <>{scanner.historyError && <p className="inline-error" role="alert">{scanner.historyError}</p>}<OpportunityTable opportunities={filterByAnchor(scanner.history)} history />{scanner.historyCursor && <button className="load-more" type="button" disabled={scanner.historyLoading} onClick={scanner.loadMoreHistory}>{scanner.historyLoading ? "正在加载…" : "加载更多历史"}</button>}</>}
+        {tab === "history" && <>{scanner.historyError && <p className="inline-error" role="alert">{scanner.historyError}</p>}<OpportunityTable opportunities={filterOpportunities(scanner.history)} history />{scanner.historyCursor && <button className="load-more" type="button" disabled={scanner.historyLoading} onClick={scanner.loadMoreHistory}>{scanner.historyLoading ? "正在加载…" : "加载更多历史"}</button>}</>}
         {tab === "status" && <StatusPanel status={status} />}
       </section>
 

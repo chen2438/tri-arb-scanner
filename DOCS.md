@@ -350,7 +350,7 @@ SQLite 只保存：
 | `TRI_ARB_PORT` | `8000` | HTTP 端口 |
 | `TRI_ARB_MEXC_REST_URL` | `https://api.mexc.com` | MEXC 公共 REST 根地址 |
 | `TRI_ARB_MEXC_WS_URL` | `wss://wbs-api.mexc.com/ws` | MEXC 公共 WebSocket 地址 |
-| `TRI_ARB_OKX_ENABLED` | `true` | 是否在统一调度完成后启用 OKX 公共行情 |
+| `TRI_ARB_OKX_ENABLED` | `true` | 是否启用 OKX 公共行情与独立扫描 |
 | `TRI_ARB_OKX_REST_URL` | `https://www.okx.com` | OKX 公共 REST 根地址 |
 | `TRI_ARB_OKX_WS_URL` | `wss://ws.okx.com:8443/ws/v5/public` | OKX 公共 WebSocket 地址 |
 | `TRI_ARB_OKX_TAKER_COMMISSION` | `0.001` | 无私有费率接口时使用的保守 taker 费率 |
@@ -386,14 +386,14 @@ degraded 并关闭依赖该行情的机会。
 
 - `GET /api/health/live`：进程存活；
 - `GET /api/health/ready`：配置、数据库、元数据和全市场广筛是否就绪；
-- `GET /api/status`：扫描阶段、市场/边/路径数、REST、价格保护和 24 小时活跃度年龄、核心市场/覆盖
-  路径数、WebSocket 连接和订阅数、最近错误，以及最新诊断快照；
+- `GET /api/status`：聚合扫描阶段、市场/边/路径数、REST、价格保护和 24 小时活跃度年龄、核心市场/
+  覆盖路径数、WebSocket 连接和订阅数、最近错误、最新诊断，以及 `exchanges` 分交易所明细；
 - `GET /api/diagnostics`：最新机会漏斗、拒绝原因、当前近似机会和最近一小时精确收益分布；首轮扫描前
   `diagnostics` 为 `null`；
 - `GET /api/config`：当前有效的非敏感配置；
-- `GET /api/opportunities`：当前活跃机会，支持 `limit` 和游标；
+- `GET /api/opportunities`：当前活跃机会，支持 `limit`、游标、`anchor` 和 `exchange` 过滤；
 - `GET /api/opportunities/{id}`：一个生命周期及最新完整三腿明细；
-- `GET /api/history`：已关闭生命周期，支持 `cursor`、`limit`、`route` 和时间过滤。
+- `GET /api/history`：已关闭生命周期，支持 `cursor`、`limit`、`route`、`anchor`、`exchange` 和时间过滤。
 
 分页 `limit` 默认 50、最大 200；游标为不透明字符串。未知 ID 返回 404，非法参数返回结构化 422。
 所有 Decimal 编码为十进制字符串，所有时间编码为 UTC ISO-8601，禁止先转成 JSON number。
@@ -401,7 +401,7 @@ degraded 并关闭依赖该行情的机会。
 核心机会响应包含：
 
 ```text
-id, route_id, state, assets, start_amount, final_amount,
+id, exchange, route_id, state, assets, start_amount, final_amount,
 gross_return_bps, modeled_return_bps, safety_buffer_bps, net_return_bps,
 anchor_asset, estimated_profit, confirmed_capacity,
 estimated_profit_usdt, confirmed_capacity_usdt（兼容字段）,
@@ -492,7 +492,8 @@ market_age_ms, leg_skew_ms, legs[]
 **状态：已完成。**
 
 - 已实现 REST、后端 WebSocket 的 snapshot/增量协议、慢客户端保护和游标分页；
-- 已实现中文实时机会、三腿明细、历史和健康状态页面；
+- 已实现中文实时机会、三腿明细、历史和健康状态页面；机会、近似机会和连接均标注交易所，实时与历史
+  支持交易所及锚定资产组合过滤，状态页按 MEXC/OKX 分栏；
 - 已实现声音提示、重连覆盖和降级状态展示；
 - 已完成桌面与 390 px 移动端真实 MEXC 行情浏览器验证、交互检查和生产构建。
 
@@ -523,7 +524,7 @@ market_age_ms, leg_skew_ms, legs[]
 - 2 秒新鲜度、1 秒腿间偏差、订阅前旧快照隔离和乱序消息；
 - SQLite 开启/峰值/关闭事件、重启恢复、7 天清理和串行写入；
 - REST Decimal 字符串、游标、404/422，WebSocket snapshot、sequence 跳跃和重连；
-- 前端排序、明细展开、空状态、degraded 状态、历史分页和声音去重；
+- 前端排序、交易所/锚定资产过滤、明细展开、空状态、degraded 状态、历史分页和声音去重；
 - 使用至少 3,000 个市场、2,000 条路径的合成夹具完成一轮广筛，CI 单轮不超过 250 ms。
 
 ### 10.2 发布不变量

@@ -47,6 +47,7 @@ export type Opportunity = {
 };
 
 export type WebSocketConnection = {
+  exchange: string;
   shard_id: number;
   state: string;
   generation: number;
@@ -54,9 +55,31 @@ export type WebSocketConnection = {
   error: string | null;
 };
 
+export type ExchangeStatus = {
+  exchange: string;
+  phase: string;
+  ready: boolean;
+  market_count: number;
+  route_count: number;
+  ticker_count: number;
+  market_activity_count: number;
+  core_market_count: number;
+  core_route_count: number;
+  depth_book_count: number;
+  subscription_count: number;
+  rest_metadata_age_ms: number | null;
+  rest_clock_age_ms: number | null;
+  rest_ticker_age_ms: number | null;
+  rest_price_reference_age_ms: number | null;
+  rest_market_activity_age_ms: number | null;
+  last_error: string | null;
+  websocket_connections: WebSocketConnection[];
+};
+
 export type ScannerStatus = {
   phase: string;
   ready: boolean;
+  exchanges: ExchangeStatus[];
   market_count: number;
   route_count: number;
   ticker_count: number;
@@ -111,6 +134,8 @@ export type PublicConfig = {
   min_net_return_bps: string;
   safety_buffer_bps: string;
   depth_levels: number;
+  okx_enabled: boolean;
+  okx_taker_commission: string;
 };
 
 export type SocketMessage = {

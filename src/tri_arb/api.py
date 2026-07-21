@@ -113,11 +113,20 @@ def create_app(
         anchor: str | None = Query(
             default=None, min_length=2, max_length=16, pattern="^[A-Z0-9]+$"
         ),
+        exchange: str | None = Query(
+            default=None, min_length=2, max_length=16, pattern="^[A-Z0-9]+$"
+        ),
     ) -> dict[str, Any]:
         decoded = _cursor_decode(cursor, "active")
         active = resolved_services.scanner_runtime.active()
         if anchor is not None:
             active = tuple(lifecycle for lifecycle in active if lifecycle.assets[0] == anchor)
+        if exchange is not None:
+            active = tuple(
+                lifecycle
+                for lifecycle in active
+                if lifecycle.current_simulation.route.exchange == exchange
+            )
         if decoded is not None:
             try:
                 net_return = Decimal(decoded["net_return_bps"])
@@ -179,6 +188,9 @@ def create_app(
         anchor: str | None = Query(
             default=None, min_length=2, max_length=16, pattern="^[A-Z0-9]+$"
         ),
+        exchange: str | None = Query(
+            default=None, min_length=2, max_length=16, pattern="^[A-Z0-9]+$"
+        ),
         from_time: Annotated[datetime | None, Query(alias="from")] = None,
         to_time: Annotated[datetime | None, Query(alias="to")] = None,
     ) -> dict[str, Any]:
@@ -195,6 +207,10 @@ def create_app(
             row
             for row in rows
             if (route is None or row.route_id == route)
+            and (
+                exchange is None
+                or audit_snapshot_to_public(row.snapshot_json)["exchange"] == exchange
+            )
             and (
                 anchor is None
                 or audit_snapshot_to_public(row.snapshot_json)["anchor_asset"] == anchor
