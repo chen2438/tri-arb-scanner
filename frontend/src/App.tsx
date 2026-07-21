@@ -186,7 +186,7 @@ function StatusPanel({ status }: { status: ScannerStatus | null }) {
         {status.websocket_connections.length === 0 ? <p className="muted">当前没有深度订阅。</p> : (
           <div className="shard-list">
             {status.websocket_connections.map((connection) => (
-              <div key={connection.shard_id}>
+              <div key={`${connection.exchange}-${connection.shard_id}`}>
                 <span className={`status-dot status-dot--${connection.state.toLowerCase()}`} />
                 <strong>{connection.exchange} 分片 {connection.shard_id + 1}</strong>
                 <span>{connection.state}</span>

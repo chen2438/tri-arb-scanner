@@ -475,7 +475,8 @@ v0.1 不支持在网页中修改。
 - `GET /api/health/live`：进程存活；
 - `GET /api/health/ready`：配置、数据库、元数据和全市场广筛是否就绪；
 - `GET /api/status`：聚合扫描阶段、市场/边/路径数、REST、价格保护和 24 小时活跃度年龄、核心市场/
-  覆盖路径数、WebSocket 连接和订阅数、最近错误、最新诊断，以及 `exchanges` 分交易所明细；
+  覆盖路径数、WebSocket 连接和订阅数、最近错误、最新诊断，以及 `exchanges` 分交易所明细；连接身份
+  由 `exchange + shard_id` 共同确定，不同交易所的同号分片不是同一连接；
 - `GET /api/diagnostics`：最新机会漏斗、拒绝原因、当前近似机会和最近一小时精确收益分布；首轮扫描前
   `diagnostics` 为 `null`；
 - `GET /api/config`：当前有效的非敏感配置；
