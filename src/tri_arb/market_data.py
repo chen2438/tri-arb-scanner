@@ -145,8 +145,16 @@ class MarketDataService:
 
     async def refresh_metadata(self) -> NormalizedExchangeInfo:
         result = await self._rest.exchange_info()
-        routes = enumerate_triangular_routes(
-            build_market_graph(result.markets), anchor_asset=self._settings.anchor_asset
+        graph = build_market_graph(result.markets)
+        routes = tuple(
+            sorted(
+                (
+                    route
+                    for anchor in self._settings.anchor_assets
+                    for route in enumerate_triangular_routes(graph, anchor_asset=anchor)
+                ),
+                key=lambda route: route.route_id,
+            )
         )
         valid_symbols = {market.symbol for market in result.markets}
         route_ids = {route.route_id for route in routes}
@@ -213,11 +221,19 @@ class MarketDataService:
             references.append(await self._rest.average_price(symbol))
         async with self._lock:
             current_symbols = set(self._plan.symbols)
-            self._price_references = {
-                reference.symbol: reference
-                for reference in references
-                if reference.symbol in current_symbols
+            retained = {
+                symbol: reference
+                for symbol, reference in self._price_references.items()
+                if symbol in current_symbols
             }
+            retained.update(
+                {
+                    reference.symbol: reference
+                    for reference in references
+                    if reference.symbol in current_symbols
+                }
+            )
+            self._price_references = retained
             self._last_price_reference_ms = self._now_ms() if references else None
         return tuple(references)
 

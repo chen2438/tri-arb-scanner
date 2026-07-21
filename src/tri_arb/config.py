@@ -13,6 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_PREFIX = "TRI_ARB_"
 LOOPBACK_NAMES = {"localhost"}
+SUPPLEMENTAL_ANCHOR_ASSETS = ("USDC", "USD1")
 
 
 def _is_loopback_host(host: str) -> bool:
@@ -64,6 +65,10 @@ class Settings(BaseSettings):
     history_retention_days: int = Field(default=7, ge=1, le=365)
     database_url: str = "sqlite+aiosqlite:///./tri_arb.db"
 
+    @property
+    def anchor_assets(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((self.anchor_asset, *SUPPLEMENTAL_ANCHOR_ASSETS)))
+
     @field_validator("host")
     @classmethod
     def validate_host(cls, value: str) -> str:
@@ -105,7 +110,7 @@ class Settings(BaseSettings):
             raise ValueError("leg skew cannot exceed maximum depth age")
         return self
 
-    def public_dict(self) -> dict[str, str | int]:
+    def public_dict(self) -> dict[str, object]:
         """Return the safe, JSON-ready configuration exposed by the local API."""
 
         return {
@@ -114,6 +119,7 @@ class Settings(BaseSettings):
             "mexc_rest_url": self.mexc_rest_url,
             "mexc_ws_url": self.mexc_ws_url,
             "anchor_asset": self.anchor_asset,
+            "anchor_assets": list(self.anchor_assets),
             "notional": str(self.notional),
             "min_net_return_bps": str(self.min_net_return_bps),
             "close_net_return_bps": str(self.close_net_return_bps),

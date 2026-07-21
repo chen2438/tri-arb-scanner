@@ -141,8 +141,8 @@ function OpportunityTable({ opportunities, history = false }: { opportunities: O
             <button className="opportunity-row" type="button" aria-expanded={isExpanded} onClick={() => setExpanded(isExpanded ? null : opportunity.id)}>
               <span data-label="路径"><RoutePath opportunity={opportunity} />{history && <small>{closeReasonLabel[opportunity.close_reason ?? ""] ?? opportunity.close_reason ?? "已关闭"}</small>}</span>
               <span data-label="预估净收益" className="return-value">{signed(opportunity.net_return_bps, " bps")}</span>
-              <span data-label="预估利润"><strong>{signed(opportunity.estimated_profit_usdt)}</strong> <small>USDT</small></span>
-              <span data-label="确认容量"><strong>{opportunity.confirmed_capacity_usdt}</strong> <small>USDT</small></span>
+              <span data-label="预估利润"><strong>{signed(opportunity.estimated_profit)}</strong> <small>{opportunity.anchor_asset}</small></span>
+              <span data-label="确认容量"><strong>{opportunity.confirmed_capacity}</strong> <small>{opportunity.anchor_asset}</small></span>
               <span data-label={history ? "关闭时间" : "行情年龄"}>{history ? formatTime(opportunity.closed_at) : formatAge(opportunity.market_age_ms)}</span>
               <span className="expand-icon" aria-hidden="true">{isExpanded ? "−" : "+"}</span>
             </button>
@@ -230,8 +230,10 @@ function DiagnosticsPanel({ diagnostics }: { diagnostics: ScannerDiagnostics | n
 export default function App() {
   const scanner = useScanner();
   const [tab, setTab] = useState<Tab>("live");
+  const [anchorFilter, setAnchorFilter] = useState("ALL");
   const status = scanner.live.status;
   const degraded = scanner.live.connection !== "connected" || (status !== null && !status.ready);
+  const filterByAnchor = (values: Opportunity[]) => anchorFilter === "ALL" ? values : values.filter((item) => item.anchor_asset === anchorFilter);
 
   return (
     <main className="shell">
@@ -244,7 +246,7 @@ export default function App() {
       </header>
 
       <section className="intro">
-        <div><p className="eyebrow">MEXC SPOT · READ ONLY</p><h1>三角套利扫描器</h1><p>全市场广筛，候选路径再用实时订单簿逐腿模拟。所有收益均为预估，不执行交易。</p></div>
+        <div><p className="eyebrow">MEXC SPOT · READ ONLY</p><h1>三角套利扫描器</h1><p>同时扫描 USDT、USDC 与 USD1 闭环，候选路径再用实时订单簿逐腿模拟。所有收益均为预估，不执行交易。</p></div>
         <div className="intro-badge"><span>当前阶段</span><strong>{status?.phase ?? "初始化"}</strong></div>
       </section>
 
@@ -252,9 +254,9 @@ export default function App() {
 
       <section className="metrics" aria-label="扫描器概览">
         <article><span>实时机会</span><strong>{scanner.live.opportunities.length}</strong><small>20 档深度已确认</small></article>
-        <article><span>扫描路径</span><strong>{status?.route_count ?? "—"}</strong><small>USDT 闭环</small></article>
+        <article><span>扫描路径</span><strong>{status?.route_count ?? "—"}</strong><small>{scanner.config?.anchor_assets.join(" / ") ?? "多锚定"} 闭环</small></article>
         <article><span>预估门槛</span><strong>{scanner.config?.min_net_return_bps ?? "—"}</strong><small>bps 净收益</small></article>
-        <article><span>模拟规模</span><strong>{scanner.config?.notional ?? "—"}</strong><small>{scanner.config?.anchor_asset ?? "USDT"} / 路径</small></article>
+        <article><span>模拟规模</span><strong>{scanner.config?.notional ?? "—"}</strong><small>各锚定资产 / 路径</small></article>
       </section>
 
       <nav className="tabs" aria-label="扫描器页面">
@@ -262,9 +264,10 @@ export default function App() {
       </nav>
 
       <section className="workspace">
-        {tab === "live" && <OpportunityTable opportunities={scanner.live.opportunities} />}
+        {(tab === "live" || tab === "history") && <label className="anchor-filter">锚定资产<select value={anchorFilter} onChange={(event) => setAnchorFilter(event.target.value)}><option value="ALL">全部</option>{scanner.config?.anchor_assets.map((anchor) => <option value={anchor} key={anchor}>{anchor}</option>)}</select></label>}
+        {tab === "live" && <OpportunityTable opportunities={filterByAnchor(scanner.live.opportunities)} />}
         {tab === "diagnostics" && <DiagnosticsPanel diagnostics={status?.diagnostics ?? null} />}
-        {tab === "history" && <>{scanner.historyError && <p className="inline-error" role="alert">{scanner.historyError}</p>}<OpportunityTable opportunities={scanner.history} history />{scanner.historyCursor && <button className="load-more" type="button" disabled={scanner.historyLoading} onClick={scanner.loadMoreHistory}>{scanner.historyLoading ? "正在加载…" : "加载更多历史"}</button>}</>}
+        {tab === "history" && <>{scanner.historyError && <p className="inline-error" role="alert">{scanner.historyError}</p>}<OpportunityTable opportunities={filterByAnchor(scanner.history)} history />{scanner.historyCursor && <button className="load-more" type="button" disabled={scanner.historyLoading} onClick={scanner.loadMoreHistory}>{scanner.historyLoading ? "正在加载…" : "加载更多历史"}</button>}</>}
         {tab === "status" && <StatusPanel status={status} />}
       </section>
 

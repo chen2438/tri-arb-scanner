@@ -103,16 +103,21 @@ def create_app(
         return {"diagnostics": status_payload["diagnostics"]}
 
     @app.get("/api/config")
-    async def public_config() -> dict[str, str | int]:
+    async def public_config() -> dict[str, object]:
         return resolved.public_dict()
 
     @app.get("/api/opportunities")
     async def opportunities(
         limit: int = Query(default=50, ge=1, le=200),
         cursor: str | None = None,
+        anchor: str | None = Query(
+            default=None, min_length=2, max_length=16, pattern="^[A-Z0-9]+$"
+        ),
     ) -> dict[str, Any]:
         decoded = _cursor_decode(cursor, "active")
         active = resolved_services.scanner_runtime.active()
+        if anchor is not None:
+            active = tuple(lifecycle for lifecycle in active if lifecycle.assets[0] == anchor)
         if decoded is not None:
             try:
                 net_return = Decimal(decoded["net_return_bps"])
@@ -171,6 +176,9 @@ def create_app(
         limit: int = Query(default=50, ge=1, le=200),
         cursor: str | None = None,
         route: str | None = None,
+        anchor: str | None = Query(
+            default=None, min_length=2, max_length=16, pattern="^[A-Z0-9]+$"
+        ),
         from_time: Annotated[datetime | None, Query(alias="from")] = None,
         to_time: Annotated[datetime | None, Query(alias="to")] = None,
     ) -> dict[str, Any]:
@@ -187,6 +195,10 @@ def create_app(
             row
             for row in rows
             if (route is None or row.route_id == route)
+            and (
+                anchor is None
+                or audit_snapshot_to_public(row.snapshot_json)["anchor_asset"] == anchor
+            )
             and (from_ms is None or (row.closed_at_ms or 0) >= from_ms)
             and (to_ms is None or (row.closed_at_ms or 0) <= to_ms)
         ]

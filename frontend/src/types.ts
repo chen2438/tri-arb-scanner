@@ -22,6 +22,7 @@ export type Opportunity = {
   route_id: string;
   state: "active" | "closed";
   assets: [string, string, string, string];
+  anchor_asset: string;
   start_amount: string;
   final_amount: string;
   gross_return_bps: string;
@@ -29,7 +30,9 @@ export type Opportunity = {
   safety_buffer_bps: string;
   net_return_bps: string;
   estimated_profit_usdt: string;
+  estimated_profit: string;
   confirmed_capacity_usdt: string;
+  confirmed_capacity: string;
   first_seen_at: string;
   last_confirmed_at: string;
   closed_at: string | null;
@@ -97,6 +100,7 @@ export type ScannerDiagnostics = {
 
 export type PublicConfig = {
   anchor_asset: string;
+  anchor_assets: string[];
   notional: string;
   min_net_return_bps: string;
   safety_buffer_bps: string;

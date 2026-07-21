@@ -1,8 +1,14 @@
 from decimal import Decimal
 
+from tests.test_graph import _market
 from tests.test_subscriptions import _route
+from tri_arb.domain import build_market_graph, enumerate_triangular_routes
 from tri_arb.domain.models import BookTicker
-from tri_arb.scanner import screen_routes, screen_routes_with_diagnostics
+from tri_arb.scanner import (
+    screen_routes,
+    screen_routes_multi_anchor,
+    screen_routes_with_diagnostics,
+)
 
 
 def _ticker(symbol: str, bid: str, ask: str) -> BookTicker:
@@ -55,3 +61,30 @@ def test_skips_incomplete_routes_and_sorts_deterministically() -> None:
     assert diagnostics.positive_route_count == 0
     assert len(diagnostics.candidates) == 1
     assert diagnostics.best_estimated_return_bps is not None
+
+
+def test_fairly_shortlists_multiple_anchor_assets() -> None:
+    usdt = _route(1)
+    graph = build_market_graph(
+        [
+            _market("AUSDC", "A", "USDC"),
+            _market("BA", "B", "A"),
+            _market("BUSDC", "B", "USDC"),
+        ]
+    )
+    usdc = enumerate_triangular_routes(graph, anchor_asset="USDC")[0]
+    tickers = {
+        symbol: _ticker(symbol, "1", "1.01")
+        for route in (usdt, usdc)
+        for symbol in (edge.market.symbol for edge in route.edges)
+    }
+
+    result = screen_routes_multi_anchor(
+        (usdt, usdc),
+        tickers,
+        {"USDT": Decimal("100"), "USDC": Decimal("100")},
+        limit=2,
+    )
+
+    assert {candidate.route.assets[0] for candidate in result.candidates} == {"USDT", "USDC"}
+    assert result.total_route_count == 2

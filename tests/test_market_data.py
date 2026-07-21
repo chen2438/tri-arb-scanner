@@ -93,6 +93,31 @@ async def test_builds_coherent_ready_snapshot_from_public_rest_inputs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_builds_routes_for_all_supported_anchor_assets() -> None:
+    rest = FakeRestClient()
+    rest.markets = (
+        *rest.markets,
+        _market("CUSDC", "C", "USDC"),
+        _market("DC", "D", "C"),
+        _market("DUSDC", "D", "USDC"),
+        _market("EUSD1", "E", "USD1"),
+        _market("FE", "F", "E"),
+        _market("FUSD1", "F", "USD1"),
+    )
+    service = MarketDataService(
+        Settings(mexc_ws_url="ws://127.0.0.1:1/ws", _env_file=None),
+        rest_client=rest,  # type: ignore[arg-type]
+        now_ms=lambda: 1_000,
+    )
+
+    await service.refresh_metadata()
+    routes = (await service.snapshot()).routes
+
+    assert {route.assets[0] for route in routes} == {"USDT", "USDC", "USD1"}
+    assert len(routes) == 6
+
+
+@pytest.mark.asyncio
 async def test_reconciles_ranked_routes_into_complete_depth_subscription_plan() -> None:
     service = MarketDataService(
         Settings(mexc_ws_url="ws://127.0.0.1:1/ws", _env_file=None),

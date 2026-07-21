@@ -57,6 +57,7 @@ async def test_read_only_opportunity_detail_history_filters_and_cursors(tmp_path
             ready = await client.get("/api/health/ready")
             status = await client.get("/api/status")
             active = await client.get("/api/opportunities")
+            active_usdc = await client.get("/api/opportunities", params={"anchor": "USDC"})
             active_item = active.json()["items"][0]
             detail = await client.get(f"/api/opportunities/{active_item['id']}")
             first_history = await client.get("/api/history", params={"limit": 1})
@@ -69,6 +70,7 @@ async def test_read_only_opportunity_detail_history_filters_and_cursors(tmp_path
                 "/api/history",
                 params={"from": "1970-01-01T00:00:03Z"},
             )
+            history_usdc = await client.get("/api/history", params={"anchor": "USDC"})
             unknown = await client.get("/api/opportunities/00000000-0000-0000-0000-000000000000")
             invalid_cursor = await client.get("/api/history", params={"cursor": "bad"})
             invalid_limit = await client.get("/api/opportunities", params={"limit": 0})
@@ -78,6 +80,7 @@ async def test_read_only_opportunity_detail_history_filters_and_cursors(tmp_path
         assert status.json()["market_count"] == 3
         assert status.json()["active_opportunity_count"] == 1
         assert active.status_code == 200
+        assert active_usdc.json()["items"] == []
         assert active_item["state"] == "active"
         assert isinstance(active_item["net_return_bps"], str)
         assert detail.json() == active_item
@@ -86,6 +89,7 @@ async def test_read_only_opportunity_detail_history_filters_and_cursors(tmp_path
         assert len(second_history.json()["items"]) == 1
         assert second_history.json()["next_cursor"] is None
         assert len(filtered.json()["items"]) == 1
+        assert history_usdc.json()["items"] == []
         assert unknown.status_code == 404
         assert invalid_cursor.status_code == 422
         assert invalid_limit.status_code == 422

@@ -17,7 +17,7 @@ from tri_arb.scanner.confirmation import (
 from tri_arb.scanner.screening import (
     BroadCandidate,
     BroadScreenResult,
-    screen_routes_with_diagnostics,
+    screen_routes_multi_anchor,
 )
 
 
@@ -52,10 +52,10 @@ class ScannerEngine:
 
     def evaluate(self, snapshot: MarketDataSnapshot) -> ScannerCycle:
         evaluated_at_ms = self._now_ms()
-        broad_screen = screen_routes_with_diagnostics(
+        broad_screen = screen_routes_multi_anchor(
             snapshot.routes,
             snapshot.tickers,
-            self._settings.notional,
+            {anchor: self._settings.notional for anchor in self._settings.anchor_assets},
             limit=self._settings.shortlist_routes,
         )
         broad = broad_screen.candidates

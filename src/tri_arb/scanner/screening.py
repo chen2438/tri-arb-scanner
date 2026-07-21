@@ -89,3 +89,59 @@ def screen_routes_with_diagnostics(
         positive_route_count=sum(candidate.estimated_return_bps > 0 for candidate in candidates),
         best_estimated_return_bps=(candidates[0].estimated_return_bps if candidates else None),
     )
+
+
+def screen_routes_multi_anchor(
+    routes: Sequence[TriangularRoute],
+    tickers: Mapping[str, BookTicker],
+    start_amounts: Mapping[str, Decimal],
+    *,
+    limit: int = 20,
+) -> BroadScreenResult:
+    if limit < 0:
+        raise ValueError("broad-screen limit cannot be negative")
+    anchors = tuple(sorted({route.assets[0] for route in routes}))
+    unknown = set(anchors) - set(start_amounts)
+    if unknown:
+        raise ValueError(f"missing start amount for anchor: {', '.join(sorted(unknown))}")
+    results = {
+        anchor: screen_routes_with_diagnostics(
+            tuple(route for route in routes if route.assets[0] == anchor),
+            tickers,
+            start_amounts[anchor],
+            limit=limit,
+        )
+        for anchor in anchors
+    }
+    selected: list[BroadCandidate] = []
+    used: set[str] = set()
+    if anchors and limit:
+        base_quota, remainder = divmod(limit, len(anchors))
+        for index, anchor in enumerate(anchors):
+            quota = base_quota + (1 if index < remainder else 0)
+            for candidate in results[anchor].candidates[:quota]:
+                selected.append(candidate)
+                used.add(candidate.route.route_id)
+        remaining = sorted(
+            (
+                candidate
+                for result in results.values()
+                for candidate in result.candidates
+                if candidate.route.route_id not in used
+            ),
+            key=lambda candidate: (-candidate.estimated_return_bps, candidate.route.route_id),
+        )
+        selected.extend(remaining[: limit - len(selected)])
+    selected.sort(key=lambda candidate: (-candidate.estimated_return_bps, candidate.route.route_id))
+    best_values = tuple(
+        result.best_estimated_return_bps
+        for result in results.values()
+        if result.best_estimated_return_bps is not None
+    )
+    return BroadScreenResult(
+        candidates=tuple(selected),
+        total_route_count=sum(result.total_route_count for result in results.values()),
+        priced_route_count=sum(result.priced_route_count for result in results.values()),
+        positive_route_count=sum(result.positive_route_count for result in results.values()),
+        best_estimated_return_bps=max(best_values, default=None),
+    )

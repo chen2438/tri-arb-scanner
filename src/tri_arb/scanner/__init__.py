@@ -17,6 +17,7 @@ from tri_arb.scanner.screening import (
     BroadCandidate,
     BroadScreenResult,
     screen_routes,
+    screen_routes_multi_anchor,
     screen_routes_with_diagnostics,
 )
 
@@ -34,5 +35,6 @@ __all__ = [
     "ScannerEngine",
     "confirm_candidate",
     "screen_routes",
+    "screen_routes_multi_anchor",
     "screen_routes_with_diagnostics",
 ]

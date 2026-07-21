@@ -21,6 +21,9 @@ def test_current_and_stored_opportunity_use_identical_decimal_string_contract() 
     assert Decimal(current["estimated_profit_usdt"]) == Decimal("1.95")
     assert current["first_seen_at"] == "1970-01-01T00:00:01.000Z"
     assert current["depth_confirmed"] is True
+    assert current["anchor_asset"] == "USDT"
+    assert current["estimated_profit"] == current["estimated_profit_usdt"]
+    assert current["confirmed_capacity"] == current["confirmed_capacity_usdt"]
     assert len(current["legs"]) == 3
     assert current["legs"][0]["source_time"] == "1970-01-01T00:16:40.000Z"
 

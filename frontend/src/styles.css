@@ -35,6 +35,7 @@ button:focus-visible,a:focus-visible { outline:2px solid #58f5b9; outline-offset
 .tabs button { padding:13px 17px; border:0; border-bottom:2px solid transparent; background:transparent; color:#71867e; font-size:13px; cursor:pointer; }
 .tabs button.active { border-color:#58f5b9; color:#e9f3ef; }
 .workspace { min-height:300px; padding-top:16px; }
+.anchor-filter { display:flex; align-items:center; justify-content:flex-end; gap:9px; margin-bottom:10px; color:#71857d; font-size:11px; }.anchor-filter select { padding:7px 28px 7px 10px; border:1px solid rgb(201 255 235 / 14%); border-radius:3px; background:#07130f; color:#dbe9e3; font:11px "SFMono-Regular",Consolas,monospace; }
 .empty-state { display:grid; min-height:300px; place-content:center; padding:40px; border:1px dashed rgb(201 255 235 / 16%); background:rgb(5 17 14 / 65%); text-align:center; }
 .empty-state > span { color:#58f5b9; font-size:25px; }
 .empty-state h2 { margin:14px 0 8px; font-size:19px; font-weight:550; }

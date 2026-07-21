@@ -30,6 +30,7 @@ async def test_config_endpoint_returns_only_public_values() -> None:
     assert response.status_code == 200
     assert response.json()["mexc_rest_url"] == "https://api.mexc.com"
     assert response.json()["notional"] == "100"
+    assert response.json()["anchor_assets"] == ["USDT", "USDC", "USD1"]
 
 
 @pytest.mark.asyncio

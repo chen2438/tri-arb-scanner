@@ -11,6 +11,7 @@ def test_defaults_match_documented_safe_configuration() -> None:
 
     assert settings.host == "127.0.0.1"
     assert settings.anchor_asset == "USDT"
+    assert settings.anchor_assets == ("USDT", "USDC", "USD1")
     assert settings.notional == Decimal("100")
     assert settings.min_net_return_bps == Decimal("20")
     assert settings.depth_levels == 20
@@ -80,3 +81,4 @@ def test_public_configuration_preserves_decimals_as_strings() -> None:
 
     assert payload["notional"] == "100"
     assert payload["safety_buffer_bps"] == "5"
+    assert payload["anchor_assets"] == ["USDT", "USDC", "USD1"]
