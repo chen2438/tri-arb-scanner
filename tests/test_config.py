@@ -22,6 +22,15 @@ def test_rejects_non_loopback_bind_addresses(host: str) -> None:
         Settings(host=host, _env_file=None)
 
 
+@pytest.mark.parametrize(
+    "database_url",
+    ["postgresql+asyncpg://localhost/tri_arb", "sqlite+aiosqlite:///db.sqlite?mode=ro"],
+)
+def test_rejects_unsupported_or_parameterized_database_urls(database_url: str) -> None:
+    with pytest.raises(ValidationError, match="database"):
+        Settings(database_url=database_url, _env_file=None)
+
+
 def test_allows_insecure_upstream_only_for_loopback() -> None:
     local = Settings(
         mexc_rest_url="http://127.0.0.1:9000/",

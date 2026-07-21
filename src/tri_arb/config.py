@@ -81,6 +81,15 @@ class Settings(BaseSettings):
     def validate_ws_url(cls, value: str) -> str:
         return _validate_service_url(value, secure_scheme="wss", local_scheme="ws")
 
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, value: str) -> str:
+        if not value.startswith("sqlite+aiosqlite://") or "?" in value or "#" in value:
+            raise ValueError("v0.1 database must be a plain sqlite+aiosqlite URL")
+        if value == "sqlite+aiosqlite://":
+            raise ValueError("database URL must include a path or in-memory target")
+        return value
+
     @field_validator("depth_levels")
     @classmethod
     def validate_depth_levels(cls, value: int) -> int:

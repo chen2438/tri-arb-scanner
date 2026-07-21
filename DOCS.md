@@ -291,8 +291,8 @@ v0.1 不支持在网页中修改。
 ### 7.1 CLI
 
 - `tri-arb serve`：启动行情、扫描、数据库、API 和网页；
-- `tri-arb doctor`：检查配置、数据库、MEXC ping/time/exchangeInfo、公共 book ticker 和本地
-  Protobuf 固定夹具；不创建 API Key、不访问私有接口。
+- `tri-arb doctor`：逐项检查配置、SQLite 临时写入、MEXC ping/time/exchangeInfo、公共 book ticker 和
+  本地生成后解码的 Protobuf 固定消息；不创建 API Key、不访问私有接口，任一检查失败时返回退出码 1。
 
 服务缺少完整元数据或首份全市场报价时可以存活但未就绪；行情暂时中断时进程继续运行，状态转为
 degraded 并关闭依赖该行情的机会。
