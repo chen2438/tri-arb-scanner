@@ -129,6 +129,11 @@ OKX 深度适配使用公共 `books` 通道：每个市场必须先收到 `actio
 固定为零且不再用于完整性验证，因此实现只依赖 TLS 与严格 `seqId/prevSeqId` 连续性，不接受 checksum
 作为断档证明。每条数据同时保留 OKX `ts` 和本地接收时间。
 
+OKX 已拥有独立行情服务实例：它自行刷新 instruments、tickers 和服务器时钟，枚举带 `OKX|` 前缀的
+USDT/USDC 路径，选择自己的 30 个长期核心市场，并用两条、每条最多 30 个市场的 WebSocket 分片维护
+深度。MEXC 和 OKX 的市场图、短名单、连接代次、盘口和错误状态互不共享；统一扫描调度完成前，应用
+进程仍只启动 MEXC 实例，因此不会把尚未接入生命周期的 OKX 数据误报为机会。
+
 - [OKX API v5](https://www.okx.com/docs-v5/en/)
 - [OKX order-book checksum deprecation](https://www.okx.com/en-us/help/okx-order-book-channels-checksum-field-deprecation)
 
@@ -336,6 +341,10 @@ SQLite 只保存：
 | `TRI_ARB_PORT` | `8000` | HTTP 端口 |
 | `TRI_ARB_MEXC_REST_URL` | `https://api.mexc.com` | MEXC 公共 REST 根地址 |
 | `TRI_ARB_MEXC_WS_URL` | `wss://wbs-api.mexc.com/ws` | MEXC 公共 WebSocket 地址 |
+| `TRI_ARB_OKX_ENABLED` | `true` | 是否在统一调度完成后启用 OKX 公共行情 |
+| `TRI_ARB_OKX_REST_URL` | `https://www.okx.com` | OKX 公共 REST 根地址 |
+| `TRI_ARB_OKX_WS_URL` | `wss://ws.okx.com:8443/ws/v5/public` | OKX 公共 WebSocket 地址 |
+| `TRI_ARB_OKX_TAKER_COMMISSION` | `0.001` | 无私有费率接口时使用的保守 taker 费率 |
 | `TRI_ARB_ANCHOR_ASSET` | `USDT` | 兼容的主锚定资产；同时固定启用 USDC、USD1 |
 | `TRI_ARB_NOTIONAL` | `100` | 每个锚定资产的起始模拟金额 |
 | `TRI_ARB_MIN_NET_RETURN_BPS` | `20` | 机会开启门槛 |

@@ -15,6 +15,8 @@ def test_defaults_match_documented_safe_configuration() -> None:
     assert settings.notional == Decimal("100")
     assert settings.min_net_return_bps == Decimal("20")
     assert settings.depth_levels == 20
+    assert settings.okx_enabled is True
+    assert settings.okx_taker_commission == Decimal("0.001")
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.10", "scanner.example"])
@@ -36,15 +38,21 @@ def test_allows_insecure_upstream_only_for_loopback() -> None:
     local = Settings(
         mexc_rest_url="http://127.0.0.1:9000/",
         mexc_ws_url="ws://localhost:9001/ws/",
+        okx_rest_url="http://localhost:9002/",
+        okx_ws_url="ws://127.0.0.1:9003/ws/",
         _env_file=None,
     )
 
     assert local.mexc_rest_url == "http://127.0.0.1:9000"
     assert local.mexc_ws_url == "ws://localhost:9001/ws"
+    assert local.okx_rest_url == "http://localhost:9002"
+    assert local.okx_ws_url == "ws://127.0.0.1:9003/ws"
     with pytest.raises(ValidationError, match="must use https"):
         Settings(mexc_rest_url="http://api.mexc.com", _env_file=None)
     with pytest.raises(ValidationError, match="must use wss"):
         Settings(mexc_ws_url="ws://wbs-api.mexc.com/ws", _env_file=None)
+    with pytest.raises(ValidationError, match="must use https"):
+        Settings(okx_rest_url="http://www.okx.com", _env_file=None)
 
 
 def test_rejects_invalid_threshold_relationships() -> None:
@@ -82,3 +90,4 @@ def test_public_configuration_preserves_decimals_as_strings() -> None:
     assert payload["notional"] == "100"
     assert payload["safety_buffer_bps"] == "5"
     assert payload["anchor_assets"] == ["USDT", "USDC", "USD1"]
+    assert payload["okx_taker_commission"] == "0.001"

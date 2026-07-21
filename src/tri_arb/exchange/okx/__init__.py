@@ -1,6 +1,7 @@
 """Public OKX spot market-data adapter."""
 
 from tri_arb.exchange.okx.depth import OkxDepthError, OkxOrderBookState
+from tri_arb.exchange.okx.market_data import OkxMarketDataService
 from tri_arb.exchange.okx.metadata import (
     NormalizedOkxInstruments,
     OkxMetadataRejection,
@@ -18,6 +19,7 @@ __all__ = [
     "NormalizedOkxInstruments",
     "NormalizedOkxTickers",
     "OkxDepthError",
+    "OkxMarketDataService",
     "OkxMetadataRejection",
     "OkxOrderBookState",
     "OkxRestClient",
