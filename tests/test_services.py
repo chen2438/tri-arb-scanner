@@ -66,3 +66,33 @@ async def test_stop_cancels_background_task_after_grace_period(
     assert task.cancelled()
     assert finalized.is_set()
     assert services._tasks == ()
+
+
+@pytest.mark.asyncio
+async def test_stop_does_not_wait_forever_when_task_resists_first_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(services_module, "SHUTDOWN_GRACE_SECONDS", 0.01)
+    monkeypatch.setattr(services_module, "SHUTDOWN_CANCEL_SECONDS", 0.01)
+    services = ApplicationServices(
+        Settings(_env_file=None), market_data=object()  # type: ignore[arg-type]
+    )
+    first_cancellation = asyncio.Event()
+
+    async def resistant_cleanup() -> None:
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            first_cancellation.set()
+            await asyncio.sleep(3600)
+
+    task = asyncio.create_task(resistant_cleanup())
+    services._tasks = (task,)
+    await asyncio.sleep(0)
+
+    await asyncio.wait_for(services.stop(), timeout=0.2)
+    await asyncio.sleep(0)
+
+    assert first_cancellation.is_set()
+    assert task.cancelled()
+    assert services._tasks == ()

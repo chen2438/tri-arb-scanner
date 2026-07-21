@@ -22,6 +22,7 @@ HEARTBEAT_SECONDS = 15.0
 STATUS_POLL_SECONDS = 1.0
 UPSERT_THROTTLE_MS = 250
 SHUTDOWN_GRACE_SECONDS = 2.0
+SHUTDOWN_CANCEL_SECONDS = 1.0
 
 
 class OpportunityHub:
@@ -165,10 +166,17 @@ class ApplicationServices:
             return
         self._stop.set()
         tasks, self._tasks = self._tasks, ()
-        _done, pending = await asyncio.wait(tasks, timeout=SHUTDOWN_GRACE_SECONDS)
+        done, pending = await asyncio.wait(tasks, timeout=SHUTDOWN_GRACE_SECONDS)
         for task in pending:
             task.cancel()
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        if pending:
+            cancelled, resistant = await asyncio.wait(
+                pending, timeout=SHUTDOWN_CANCEL_SECONDS
+            )
+            done.update(cancelled)
+            for task in resistant:
+                task.cancel()
+        results = await asyncio.gather(*done, return_exceptions=True)
         error = next((result for result in results if isinstance(result, Exception)), None)
         if error is not None:
             raise error
