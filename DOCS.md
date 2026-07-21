@@ -157,6 +157,11 @@ USDT/USDC 路径，选择自己的 30 个长期核心市场，并用两条、每
 - [OKX Global Fee Framework](https://www.okx.com/en-gb/help/updates-to-global-fee-framework)
 - [Binance Spot REST API](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md)
 - [Binance Spot Filters](https://github.com/binance/binance-spot-api-docs/blob/master/filters.md)
+- [Bybit V5 Instruments Info](https://bybit-exchange.github.io/docs/v5/market/instrument)
+- [Bybit V5 Tickers](https://bybit-exchange.github.io/docs/v5/market/tickers)
+- [Bybit V5 Orderbook](https://bybit-exchange.github.io/docs/v5/market/orderbook)
+- [Bybit V5 Order Price Limit](https://bybit-exchange.github.io/docs/v5/market/order-price-limit)
+- [Bybit Spot Fee Structure](https://www.bybit.com/en/help-center/article/Trading-Fee-Structure)
 
 Binance REST 适配只访问安全类型为 `NONE` 的公共端点，不使用 API Key。`exchangeInfo` 的 `LOT_SIZE`
 和 `NOTIONAL`/`MIN_NOTIONAL` 被归一化为数量及报价约束；公开 `executionRules` 的 `PRICE_RANGE` 被转换为
@@ -533,6 +538,9 @@ market_age_ms, leg_skew_ms, legs[]
   `seqId/prevSeqId` 而非已停用的 checksum 校验连续性；
 - 已实现三交易所独立核心集合、订阅、连接代次和错误状态。
 - 已实现 Binance 公共规则/报价/时钟、快照加 diff 深度重建、参考价流和独立行情服务，并接入统一扫描。
+- 已实现 Bybit V5 公共 instruments/tickers/time、REST 深度快照与逐市场公开价格限制归一化；Bybit
+  市场要求显式价格限制，未取得新鲜 `price-limit` 时不得确认机会。公共只读配置使用覆盖普通现货和
+  特殊交易区非 VIP 费率的 20 bps 保守手续费下限。
 
 ### 里程碑 4：扫描、生命周期与存储
 
