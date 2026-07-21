@@ -145,6 +145,7 @@ class PriceReference:
     price: Decimal
     window_minutes: int
     received_time_ms: int
+    source_time_ms: int | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -155,10 +156,12 @@ class PriceReference:
             raise ValueError("invalid price reference symbol")
         if not self.price.is_finite() or self.price <= ZERO:
             raise ValueError("price reference must be finite and positive")
-        if not 1 <= self.window_minutes <= 60:
-            raise ValueError("price reference window must be between 1 and 60 minutes")
+        if not 0 <= self.window_minutes <= 60:
+            raise ValueError("price reference window must be between 0 and 60 minutes")
         if self.received_time_ms <= 0:
             raise ValueError("price reference receive time must be positive")
+        if self.source_time_ms is not None and self.source_time_ms <= 0:
+            raise ValueError("price reference source time must be positive when present")
 
 
 @dataclass(frozen=True, slots=True)

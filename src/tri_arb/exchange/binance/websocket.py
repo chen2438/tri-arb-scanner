@@ -7,11 +7,14 @@ import json
 import random
 import time
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
+from tri_arb.domain.models import PriceReference
 from tri_arb.exchange.binance.depth import (
     BinanceDepthError,
     BinanceDepthEvent,
@@ -35,10 +38,30 @@ RECONNECT_DELAYS = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
 SnapshotLoader = Callable[[str], Awaitable[BinanceDepthSnapshot]]
 
 
+@dataclass(frozen=True, slots=True)
+class ReferenceUpdate:
+    reference: PriceReference
+    shard_id: int
+    connection_generation: int
+    subscription_generation: int
+
+
+OnReference = Callable[[ReferenceUpdate], Awaitable[None]]
+
+
+async def _ignore_reference(_update: ReferenceUpdate) -> None:
+    return None
+
+
 def stream_name(symbol: str) -> str:
     if not symbol or symbol != symbol.strip().upper() or len(symbol) > 64:
         raise ValueError("invalid Binance stream symbol")
     return f"{symbol.lower()}@depth@100ms"
+
+
+def reference_stream_name(symbol: str) -> str:
+    stream_name(symbol)
+    return f"{symbol.lower()}@referencePrice"
 
 
 def control_payload(operation: str, symbols: set[str], request_id: int) -> str:
@@ -47,7 +70,11 @@ def control_payload(operation: str, symbols: set[str], request_id: int) -> str:
     return json.dumps(
         {
             "method": operation,
-            "params": [stream_name(symbol) for symbol in sorted(symbols)],
+            "params": [
+                stream
+                for symbol in sorted(symbols)
+                for stream in (stream_name(symbol), reference_stream_name(symbol))
+            ],
             "id": request_id,
         },
         separators=(",", ":"),
@@ -67,6 +94,36 @@ def validate_control_message(message: Mapping[str, Any]) -> bool:
     return True
 
 
+def normalize_reference_event(payload: Any, *, received_time_ms: int) -> PriceReference:
+    if (
+        not isinstance(payload, Mapping)
+        or payload.get("e") != "referencePrice"
+        or received_time_ms <= 0
+    ):
+        raise BinanceDepthError("invalid Binance reference-price event")
+    symbol = payload.get("s")
+    if not isinstance(symbol, str):
+        raise BinanceDepthError("invalid Binance reference-price symbol")
+    stream_name(symbol)
+    raw_price = payload.get("r")
+    if not isinstance(raw_price, str) or not raw_price or len(raw_price) > 128:
+        raise BinanceDepthError("invalid Binance reference price")
+    try:
+        price = Decimal(raw_price)
+    except InvalidOperation as error:
+        raise BinanceDepthError("invalid Binance reference price") from error
+    source_time = payload.get("t")
+    if (
+        not price.is_finite()
+        or price <= 0
+        or isinstance(source_time, bool)
+        or not isinstance(source_time, int)
+        or source_time <= 0
+    ):
+        raise BinanceDepthError("invalid Binance reference price")
+    return PriceReference(symbol, price, 0, received_time_ms, source_time)
+
+
 class BinanceDepthWebSocketShard:
     def __init__(
         self,
@@ -76,6 +133,7 @@ class BinanceDepthWebSocketShard:
         on_depth: OnDepth,
         *,
         on_status: OnStatus = _ignore_status,
+        on_reference: OnReference = _ignore_reference,
         now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
         sleep=asyncio.sleep,
         jitter: Callable[[], float] = random.random,
@@ -87,6 +145,7 @@ class BinanceDepthWebSocketShard:
         self._snapshot_loader = snapshot_loader
         self._on_depth = on_depth
         self._on_status = on_status
+        self._on_reference = on_reference
         self._now_ms = now_ms
         self._sleep = sleep
         self._jitter = jitter
@@ -210,6 +269,21 @@ class BinanceDepthWebSocketShard:
                     if not isinstance(message, Mapping):
                         raise BinanceDepthError("Binance WebSocket message must be an object")
                     if validate_control_message(message):
+                        continue
+                    if message.get("e") == "referencePrice":
+                        reference = normalize_reference_event(
+                            message, received_time_ms=self._now_ms()
+                        )
+                        if reference.symbol not in active:
+                            continue
+                        await self._on_reference(
+                            ReferenceUpdate(
+                                reference,
+                                self._shard_id,
+                                self._connection_generation,
+                                self._subscription_generations[reference.symbol],
+                            )
+                        )
                         continue
                     event = normalize_depth_event(message, received_time_ms=self._now_ms())
                     if event.symbol not in active:

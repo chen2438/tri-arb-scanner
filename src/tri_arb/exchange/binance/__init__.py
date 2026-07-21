@@ -21,7 +21,11 @@ from tri_arb.exchange.binance.rest import (
     NormalizedBinanceTickers,
     normalize_tickers,
 )
-from tri_arb.exchange.binance.websocket import BinanceDepthWebSocketShard
+from tri_arb.exchange.binance.websocket import (
+    BinanceDepthWebSocketShard,
+    ReferenceUpdate,
+    normalize_reference_event,
+)
 
 __all__ = [
     "BinanceDepthError",
@@ -36,8 +40,10 @@ __all__ = [
     "BinanceRestProtocolError",
     "NormalizedBinanceExchangeInfo",
     "NormalizedBinanceTickers",
+    "ReferenceUpdate",
     "normalize_depth_event",
     "normalize_depth_snapshot",
     "normalize_exchange_info",
+    "normalize_reference_event",
     "normalize_tickers",
 ]

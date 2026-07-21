@@ -150,6 +150,42 @@ def test_fails_closed_for_missing_or_stale_protection_reference() -> None:
     assert stale.reject_reasons == ("stale_price_reference",)
 
 
+def test_fails_closed_for_stale_exchange_source_reference_time() -> None:
+    candidate, updates, plan, statuses = _inputs()
+    protected = candidate.route.edges[0]
+    protected_market = replace(
+        protected.market,
+        price_protection=PriceProtection(Decimal("0.10"), Decimal("0.10")),
+    )
+    candidate = replace(
+        candidate,
+        route=replace(
+            candidate.route,
+            edges=(replace(protected, market=protected_market), *candidate.route.edges[1:]),
+        ),
+    )
+    outcome = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        local_time_ms=1_000_100,
+        price_references={
+            protected_market.symbol: PriceReference(
+                protected_market.symbol,
+                Decimal("10000"),
+                0,
+                1_000_050,
+                900_000,
+            )
+        },
+        safety_buffer_bps=Decimal("5"),
+    )
+
+    assert outcome.reject_reasons == ("stale_price_reference",)
+
+
 def test_fails_closed_for_missing_stale_or_blocking_explicit_price_limit() -> None:
     candidate, updates, plan, statuses = _inputs()
     first = candidate.route.edges[0]

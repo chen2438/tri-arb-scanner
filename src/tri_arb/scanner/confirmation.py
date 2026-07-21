@@ -102,7 +102,16 @@ def confirm_candidate(
             reasons.append(ConfirmationRejectReason.MISSING_PRICE_REFERENCE.value)
             continue
         age_ms = received_now_ms - reference.received_time_ms
-        if age_ms < 0 or age_ms > max_price_reference_age_ms:
+        source_age_ms = (
+            abs(server_time_ms - reference.source_time_ms)
+            if reference.source_time_ms is not None
+            else 0
+        )
+        if (
+            age_ms < 0
+            or age_ms > max_price_reference_age_ms
+            or source_age_ms > max_price_reference_age_ms
+        ):
             reasons.append(ConfirmationRejectReason.STALE_PRICE_REFERENCE.value)
             continue
         reference_prices[edge.market.symbol] = reference.price
