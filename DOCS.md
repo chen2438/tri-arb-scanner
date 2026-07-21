@@ -15,8 +15,8 @@
 - React/TypeScript/Vite 中文实时仪表盘，提供机会、三腿明细、历史与系统状态视图；
 - Ruff、Pytest、Vitest、TypeScript、Vite 构建和提交消息 CI；
 - MEXC `exchangeInfo` 归一化、逐市场隔离诊断和确定性的 USDT/USDC/USD1 三角路径枚举；
-- OKX 公共现货 instruments、tickers 与服务器时间的严格 REST 适配层；当前主运行链路仍为 MEXC，
-  OKX 深度流和统一调度完成前不把 OKX 广筛结果发布为机会；
+- OKX 公共现货 instruments、tickers、服务器时间和 `books` 增量深度的严格适配层；当前主运行链路
+  仍为 MEXC，统一调度完成前不把 OKX 广筛结果发布为机会；
 - MEXC `PERCENT_PRICE_BY_SIDE` 价格保护规则归一化，并为候选订阅市场轮询公开 5 分钟参考价；
 - 不使用二进制浮点数的三腿 20 档模拟、手续费、取整、dust、规则拒绝和确认容量计算；
 - 公共 MEXC REST ping、服务器时间校准、交易规则和全量 book ticker 客户端，包含 429、退避、
@@ -120,7 +120,14 @@ OKX 适配层只访问无需认证的 `GET /api/v5/public/instruments`、`GET /a
 把 `lotSz` 作为基础币数量步长、`minSz` 作为最小基础币数量，并把 `volCcy24h` 作为现货报价币 24 小时
 成交量。OKX 公共 instruments 没有提供账户适用费率，也没有独立的最小报价金额规则；适配层因此要求
 调用方显式传入保守的 Decimal taker 费率，并将未公开的最小/最大报价限制表示为“无该类公开规则”，
-不拿 `minSz` 或 USD 限额冒充报价币限制。正式运行接入前仍需完成公开深度 WebSocket 的连续序列校验。
+不拿 `minSz` 或 USD 限额冒充报价币限制。
+
+OKX 深度适配使用公共 `books` 通道：每个市场必须先收到 `action=snapshot` 且 `prevSeqId=-1`，之后每条
+`update.prevSeqId` 必须等于本地上一条 `seqId`；任何缺失快照、跳号、倒序、错误频道、意外市场、空簿、
+交叉簿或非法档位都会断开并清空当前连接的簿，重连后等待新快照。数量为零的档位按官方语义删除，
+内部最多保存 400 档，只向核心模拟提供排序后的前 20 档。2026-06-23 起 JSON 深度消息的 checksum
+固定为零且不再用于完整性验证，因此实现只依赖 TLS 与严格 `seqId/prevSeqId` 连续性，不接受 checksum
+作为断档证明。每条数据同时保留 OKX `ts` 和本地接收时间。
 
 - [OKX API v5](https://www.okx.com/docs-v5/en/)
 - [OKX order-book checksum deprecation](https://www.okx.com/en-us/help/okx-order-book-channels-checksum-field-deprecation)
@@ -414,6 +421,7 @@ market_age_ms, leg_skew_ms, legs[]
 - 价格保护规则未知、参考价缺失或过期、实际吃单最差价越过保护边界时 fail-closed；
 - REST 429 服从 `Retry-After`，禁止用并发重试放大限频；
 - WebSocket 断线、订阅错误和时间异常立即使对应行情失效；
+- OKX 深度序列不连续时整条连接重建，旧连接代次中的盘口不能参与确认；
 - 日志不得输出完整环境、请求头或数据库内容；当前版本没有任何凭据应当存在；
 - 每个机会事件必须能够使用保存的三腿盘口、规则、费率和取整过程离线复算；
 - UI 必须始终使用“预估”“深度已确认”“非原子成交”等措辞，不使用“保证盈利”。
