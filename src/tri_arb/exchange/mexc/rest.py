@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from tri_arb.domain.models import BookTicker, PriceReference
+from tri_arb.domain.models import BookTicker, MarketActivity, PriceReference
 from tri_arb.exchange.mexc.metadata import NormalizedExchangeInfo, normalize_exchange_info
 
 MAX_RESPONSE_BYTES = 25 * 1024 * 1024
@@ -54,6 +54,18 @@ class NormalizedBookTickers:
     rejections: tuple[BookTickerRejection, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class MarketActivityRejection:
+    symbol: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedMarketActivities:
+    activities: tuple[MarketActivity, ...]
+    rejections: tuple[MarketActivityRejection, ...]
+
+
 Sleep = Callable[[float], Awaitable[None]]
 NowMs = Callable[[], int]
 Jitter = Callable[[], float]
@@ -76,6 +88,23 @@ def _positive_decimal(raw: Mapping[str, Any], field: str) -> Decimal:
     except (InvalidOperation, ValueError) as error:
         raise ValueError(f"invalid {field}") from error
     if not value.is_finite() or value <= 0 or abs(value.adjusted()) > 60:
+        raise ValueError(f"invalid {field}")
+    return value
+
+
+def _non_negative_decimal(raw: Mapping[str, Any], field: str) -> Decimal:
+    raw_value = raw.get(field)
+    if (
+        isinstance(raw_value, bool)
+        or not isinstance(raw_value, (str, int))
+        or len(str(raw_value)) > MAX_DECIMAL_LENGTH
+    ):
+        raise ValueError(f"invalid {field}")
+    try:
+        value = Decimal(str(raw_value))
+    except (InvalidOperation, ValueError) as error:
+        raise ValueError(f"invalid {field}") from error
+    if not value.is_finite() or value < 0 or (value and abs(value.adjusted()) > 60):
         raise ValueError(f"invalid {field}")
     return value
 
@@ -127,6 +156,43 @@ def normalize_book_tickers(payload: Any, *, received_time_ms: int) -> Normalized
         tickers.append(ticker)
     return NormalizedBookTickers(
         tickers=tuple(sorted(tickers, key=lambda ticker: ticker.symbol)),
+        rejections=tuple(sorted(rejections, key=lambda rejection: rejection.symbol)),
+    )
+
+
+def normalize_market_activities(
+    payload: Any, *, received_time_ms: int
+) -> NormalizedMarketActivities:
+    if not isinstance(payload, list):
+        raise MexcRestProtocolError("24hr ticker response must be a list")
+    if len(payload) > MAX_BOOK_TICKERS:
+        raise MexcRestProtocolError("24hr ticker response exceeds the market limit")
+    if received_time_ms <= 0:
+        raise ValueError("received_time_ms must be positive")
+    activities: list[MarketActivity] = []
+    rejections: list[MarketActivityRejection] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(payload):
+        if not isinstance(raw, Mapping):
+            raise MexcRestProtocolError(f"24hr ticker at index {index} must be an object")
+        raw_symbol = raw.get("symbol")
+        if isinstance(raw_symbol, str) and len(raw_symbol) <= MAX_SYMBOL_LENGTH:
+            if raw_symbol in seen:
+                raise MexcRestProtocolError(f"duplicate 24hr ticker symbol: {raw_symbol}")
+            seen.add(raw_symbol)
+        try:
+            activity = MarketActivity(
+                symbol=_symbol(raw),
+                quote_volume=_non_negative_decimal(raw, "quoteVolume"),
+                received_time_ms=received_time_ms,
+            )
+        except ValueError as error:
+            label = str(raw_symbol or f"index {index}")[:MAX_SYMBOL_LENGTH]
+            rejections.append(MarketActivityRejection(label, str(error)))
+            continue
+        activities.append(activity)
+    return NormalizedMarketActivities(
+        activities=tuple(sorted(activities, key=lambda activity: activity.symbol)),
         rejections=tuple(sorted(rejections, key=lambda rejection: rejection.symbol)),
     )
 
@@ -259,6 +325,10 @@ class MexcRestClient:
         async with self._book_ticker_lock:
             payload = await self._request_json("/api/v3/ticker/bookTicker")
             return normalize_book_tickers(payload, received_time_ms=self._now_ms())
+
+    async def market_activities(self) -> NormalizedMarketActivities:
+        payload = await self._request_json("/api/v3/ticker/24hr")
+        return normalize_market_activities(payload, received_time_ms=self._now_ms())
 
     async def average_price(self, symbol: str) -> PriceReference:
         try:

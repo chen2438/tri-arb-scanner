@@ -167,6 +167,7 @@ function StatusPanel({ status }: { status: ScannerStatus | null }) {
           <div><dt>交易所时钟</dt><dd>{age(status.rest_clock_age_ms)}</dd></div>
           <div><dt>全市场报价</dt><dd>{age(status.rest_ticker_age_ms)}</dd></div>
           <div><dt>价格保护参考</dt><dd>{age(status.rest_price_reference_age_ms)}</dd></div>
+          <div><dt>24 小时活跃度</dt><dd>{age(status.rest_market_activity_age_ms)}</dd></div>
           <div><dt>最近扫描</dt><dd>{formatTime(status.last_scan_at)}</dd></div>
         </dl>
       </section>
@@ -195,6 +196,8 @@ function StatusPanel({ status }: { status: ScannerStatus | null }) {
           <div><strong>{status.route_count}</strong><span>三角路径</span></div>
           <div><strong>{status.ticker_count}</strong><span>最新报价</span></div>
           <div><strong>{status.price_reference_count}</strong><span>保护参考价</span></div>
+          <div><strong>{status.core_market_count}</strong><span>长期核心市场</span></div>
+          <div><strong>{status.core_route_count}</strong><span>核心覆盖路径</span></div>
           <div><strong>{status.depth_book_count}</strong><span>深度簿</span></div>
         </div>
         {status.last_error && <p className="error-message">最近错误：{status.last_error}</p>}

@@ -154,6 +154,9 @@ class ApplicationServices:
             "route_count": market.status.route_count,
             "ticker_count": market.status.ticker_count,
             "price_reference_count": market.status.price_reference_count,
+            "market_activity_count": market.status.market_activity_count,
+            "core_market_count": market.status.core_market_count,
+            "core_route_count": market.status.core_route_count,
             "depth_book_count": market.status.depth_book_count,
             "subscription_count": market.status.subscription_count,
             "active_opportunity_count": scanner.active_count,
@@ -162,6 +165,7 @@ class ApplicationServices:
             "rest_clock_age_ms": age(market.status.last_clock_ms),
             "rest_ticker_age_ms": age(market.status.last_ticker_ms),
             "rest_price_reference_age_ms": age(market.status.last_price_reference_ms),
+            "rest_market_activity_age_ms": age(market.status.last_market_activity_ms),
             "last_scan_at": utc_iso(scanner.last_cycle_ms),
             "last_error": service_error,
             "websocket_connections": [

@@ -10,9 +10,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from tri_arb.config import Settings
+from tri_arb.domain.coverage import CoreCoverage, select_core_coverage
 from tri_arb.domain.graph import build_market_graph, enumerate_triangular_routes
 from tri_arb.domain.models import (
     BookTicker,
+    MarketActivity,
     MarketRules,
     OrderBook,
     PriceReference,
@@ -24,6 +26,7 @@ from tri_arb.exchange.mexc import (
     MexcRestClient,
     NormalizedBookTickers,
     NormalizedExchangeInfo,
+    NormalizedMarketActivities,
     ServerClock,
     SubscriptionPlan,
     WebSocketState,
@@ -36,6 +39,7 @@ METADATA_INTERVAL_SECONDS = 300.0
 CLOCK_INTERVAL_SECONDS = 60.0
 SUBSCRIPTION_INTERVAL_SECONDS = 5.0
 PRICE_REFERENCE_INTERVAL_SECONDS = 10.0
+MARKET_ACTIVITY_INTERVAL_SECONDS = 300.0
 LOGGER = get_logger(__name__)
 
 
@@ -53,14 +57,19 @@ class MarketDataStatus:
     route_count: int
     ticker_count: int
     price_reference_count: int
+    market_activity_count: int
+    core_market_count: int
+    core_route_count: int
     depth_book_count: int
     subscription_count: int
     metadata_rejection_count: int
     ticker_rejection_count: int
+    market_activity_rejection_count: int
     last_metadata_ms: int | None
     last_clock_ms: int | None
     last_ticker_ms: int | None
     last_price_reference_ms: int | None
+    last_market_activity_ms: int | None
     last_error: str | None
     websocket_statuses: tuple[WebSocketStatus, ...]
 
@@ -106,15 +115,19 @@ class MarketDataService:
         self._ranked_routes: tuple[TriangularRoute, ...] = ()
         self._tickers: dict[str, BookTicker] = {}
         self._price_references: dict[str, PriceReference] = {}
+        self._market_activities: dict[str, MarketActivity] = {}
+        self._core_coverage = CoreCoverage((), (), ())
         self._depth_updates: dict[str, DepthUpdate] = {}
         self._clock: ServerClock | None = None
         self._plan = _empty_plan()
         self._metadata_rejections = 0
         self._ticker_rejections = 0
+        self._market_activity_rejections = 0
         self._last_metadata_ms: int | None = None
         self._last_clock_ms: int | None = None
         self._last_ticker_ms: int | None = None
         self._last_price_reference_ms: int | None = None
+        self._last_market_activity_ms: int | None = None
         self._errors: dict[str, str] = {}
         self._stopped = False
         self._websocket_statuses: dict[int, WebSocketStatus] = {}
@@ -179,6 +192,11 @@ class MarketDataService:
                 for symbol, reference in self._price_references.items()
                 if symbol in valid_symbols
             }
+            self._market_activities = {
+                symbol: activity
+                for symbol, activity in self._market_activities.items()
+                if symbol in valid_symbols
+            }
             self._metadata_rejections = len(result.rejections)
             self._last_metadata_ms = self._now_ms()
         log_event(
@@ -188,6 +206,7 @@ class MarketDataService:
             route_count=len(routes),
             metadata_rejection_count=len(result.rejections),
         )
+        await self._rebuild_core_coverage()
         return result
 
     async def calibrate_clock(self) -> ServerClock:
@@ -206,7 +225,36 @@ class MarketDataService:
             }
             self._ticker_rejections = len(result.rejections)
             self._last_ticker_ms = self._now_ms()
+            needs_core = bool(self._market_activities) and not self._core_coverage.symbols
+        if needs_core:
+            await self._rebuild_core_coverage()
         return result
+
+    async def refresh_market_activities(self) -> NormalizedMarketActivities:
+        result = await self._rest.market_activities()
+        async with self._lock:
+            valid_symbols = {market.symbol for market in self._markets}
+            self._market_activities = {
+                activity.symbol: activity
+                for activity in result.activities
+                if not valid_symbols or activity.symbol in valid_symbols
+            }
+            self._market_activity_rejections = len(result.rejections)
+            self._last_market_activity_ms = self._now_ms()
+        await self._rebuild_core_coverage()
+        return result
+
+    async def _rebuild_core_coverage(self) -> CoreCoverage:
+        async with self._lock:
+            routes = self._routes
+            tickers = dict(self._tickers)
+            activities = dict(self._market_activities)
+        coverage = select_core_coverage(routes, tickers, activities)
+        route_ids = {route.route_id for route in routes}
+        async with self._lock:
+            if route_ids == {route.route_id for route in self._routes}:
+                self._core_coverage = coverage
+        return coverage
 
     async def set_ranked_routes(self, routes: tuple[TriangularRoute, ...]) -> None:
         async with self._lock:
@@ -244,6 +292,7 @@ class MarketDataService:
                 self._plan.leases,
                 now_ms=self._now_ms(),
                 route_limit=self._settings.shortlist_routes,
+                core_symbols=self._core_coverage.symbols,
             )
             previous_shards = {
                 symbol: index for index, shard in enumerate(self._plan.shards) for symbol in shard
@@ -337,14 +386,19 @@ class MarketDataService:
                 route_count=len(self._routes),
                 ticker_count=len(self._tickers),
                 price_reference_count=len(self._price_references),
+                market_activity_count=len(self._market_activities),
+                core_market_count=len(self._core_coverage.symbols),
+                core_route_count=len(self._core_coverage.covered_route_ids),
                 depth_book_count=len(self._depth_updates),
                 subscription_count=len(self._plan.leases),
                 metadata_rejection_count=self._metadata_rejections,
                 ticker_rejection_count=self._ticker_rejections,
+                market_activity_rejection_count=self._market_activity_rejections,
                 last_metadata_ms=self._last_metadata_ms,
                 last_clock_ms=self._last_clock_ms,
                 last_ticker_ms=self._last_ticker_ms,
                 last_price_reference_ms=self._last_price_reference_ms,
+                last_market_activity_ms=self._last_market_activity_ms,
                 last_error="; ".join(
                     f"{component}={self._errors[component]}" for component in sorted(self._errors)
                 )
@@ -417,6 +471,14 @@ class MarketDataService:
                         "price_reference",
                         self.refresh_price_references,
                         PRICE_REFERENCE_INTERVAL_SECONDS,
+                        stop,
+                    )
+                )
+                tasks.create_task(
+                    self._periodic(
+                        "market_activity",
+                        self.refresh_market_activities,
+                        MARKET_ACTIVITY_INTERVAL_SECONDS,
                         stop,
                     )
                 )

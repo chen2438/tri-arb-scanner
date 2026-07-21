@@ -211,6 +211,27 @@ class BookTicker:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketActivity:
+    """Public rolling activity used only to choose persistent depth coverage."""
+
+    symbol: str
+    quote_volume: Decimal
+    received_time_ms: int
+
+    def __post_init__(self) -> None:
+        if (
+            not self.symbol
+            or self.symbol != self.symbol.strip()
+            or self.symbol != self.symbol.upper()
+        ):
+            raise ValueError("invalid market activity symbol")
+        if not self.quote_volume.is_finite() or self.quote_volume < ZERO:
+            raise ValueError("market activity volume must be finite and non-negative")
+        if self.received_time_ms <= 0:
+            raise ValueError("market activity receive time must be positive")
+
+
+@dataclass(frozen=True, slots=True)
 class LegSimulation:
     symbol: str
     side: ConversionSide

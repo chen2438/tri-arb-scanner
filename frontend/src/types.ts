@@ -60,6 +60,9 @@ export type ScannerStatus = {
   route_count: number;
   ticker_count: number;
   price_reference_count: number;
+  market_activity_count: number;
+  core_market_count: number;
+  core_route_count: number;
   depth_book_count: number;
   subscription_count: number;
   active_opportunity_count: number;
@@ -68,6 +71,7 @@ export type ScannerStatus = {
   rest_clock_age_ms: number | null;
   rest_ticker_age_ms: number | null;
   rest_price_reference_age_ms: number | null;
+  rest_market_activity_age_ms: number | null;
   last_scan_at: string | null;
   last_error: string | null;
   websocket_connections: WebSocketConnection[];

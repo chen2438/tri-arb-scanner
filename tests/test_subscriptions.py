@@ -74,3 +74,25 @@ def test_reconciliation_is_deterministic_and_deduplicates_ranked_routes() -> Non
 
     assert first == second
     assert first.selected_route_ids == (route.route_id,)
+
+
+def test_keeps_core_markets_and_uses_remaining_capacity_for_ranked_routes() -> None:
+    core_routes = tuple(_route(index) for index in range(10))
+    dynamic_routes = tuple(_route(index) for index in range(10, 20))
+    core_symbols = tuple(
+        sorted(edge.market.symbol for route in core_routes for edge in route.edges)
+    )
+
+    plan = reconcile_subscriptions(
+        (*core_routes, *dynamic_routes),
+        (),
+        now_ms=1_000,
+        core_symbols=core_symbols,
+    )
+
+    assert plan.core_symbols == core_symbols
+    assert set(core_symbols) <= plan.symbols
+    assert len(plan.symbols) == 60
+    assert plan.selected_route_ids == tuple(
+        route.route_id for route in (*core_routes, *dynamic_routes)
+    )

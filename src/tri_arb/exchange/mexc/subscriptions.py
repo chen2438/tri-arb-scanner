@@ -33,6 +33,7 @@ class SubscriptionPlan:
     leases: tuple[MarketLease, ...]
     selected_route_ids: tuple[str, ...]
     shards: tuple[tuple[str, ...], tuple[str, ...]]
+    core_symbols: tuple[str, ...] = ()
 
     @property
     def symbols(self) -> frozenset[str]:
@@ -46,6 +47,7 @@ def reconcile_subscriptions(
     now_ms: int,
     route_limit: int = 20,
     minimum_residence_ms: int = MIN_RESIDENCE_MS,
+    core_symbols: tuple[str, ...] = (),
 ) -> SubscriptionPlan:
     if now_ms < 0 or route_limit < 0 or minimum_residence_ms < 0:
         raise ValueError("subscription planning inputs cannot be negative")
@@ -56,8 +58,11 @@ def reconcile_subscriptions(
         raise ValueError("current subscriptions exceed the hard market limit")
     if any(lease.subscribed_at_ms > now_ms for lease in current_leases):
         raise ValueError("subscription time cannot be in the future")
+    core = set(core_symbols)
+    if len(core) != len(core_symbols) or len(core) > MAX_DEPTH_MARKETS:
+        raise ValueError("core subscriptions must be unique and within the market limit")
 
-    target = {
+    target = core | {
         symbol
         for symbol, lease in current.items()
         if now_ms - lease.subscribed_at_ms < minimum_residence_ms
@@ -71,6 +76,9 @@ def reconcile_subscriptions(
             continue
         seen_routes.add(route.route_id)
         route_symbols = {edge.market.symbol for edge in route.edges}
+        if route_symbols <= target:
+            selected_route_ids.append(route.route_id)
+            continue
         if len(target | route_symbols) > MAX_DEPTH_MARKETS:
             continue
         target.update(route_symbols)
@@ -84,4 +92,5 @@ def reconcile_subscriptions(
         leases=leases,
         selected_route_ids=tuple(selected_route_ids),
         shards=(first, second),
+        core_symbols=tuple(sorted(core)),
     )

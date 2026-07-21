@@ -9,7 +9,7 @@ from tri_arb.services import ApplicationServices
 
 
 @pytest.mark.asyncio
-async def test_application_services_start_ready_and_stop_cleanly(tmp_path) -> None:
+async def test_application_services_start_core_coverage_and_stop_cleanly(tmp_path) -> None:
     settings = Settings(
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'services.db'}",
         mexc_ws_url="ws://127.0.0.1:1/ws",
@@ -25,13 +25,15 @@ async def test_application_services_start_ready_and_stop_cleanly(tmp_path) -> No
     await services.start()
     for _ in range(20):
         status = await services.status_payload()
-        if status["ready"]:
+        if status["market_count"] == 3 and services.scanner_runtime.status().started:
             break
         await asyncio.sleep(0.05)
     else:
-        raise AssertionError(f"services did not become ready: {status}")
+        raise AssertionError(f"services did not initialize: {status}")
     await services.stop()
 
     assert status["market_count"] == 3
     assert status["route_count"] == 2
+    assert status["core_market_count"] == 3
+    assert status["ready"] is False
     assert services.scanner_runtime.status().started is False

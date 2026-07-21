@@ -9,6 +9,7 @@ from tri_arb.exchange.mexc import (
     MexcRestError,
     MexcRestProtocolError,
     normalize_book_tickers,
+    normalize_market_activities,
 )
 
 
@@ -47,6 +48,22 @@ def test_normalizes_book_tickers_as_decimals_and_quarantines_invalid_markets() -
     assert ticker.ask_quantity == Decimal("3.5")
     assert result.rejections[0].symbol == "ETHUSDT"
     assert "bidPrice" in result.rejections[0].reason
+
+
+def test_normalizes_public_rolling_quote_volume_for_core_coverage() -> None:
+    result = normalize_market_activities(
+        [
+            {"symbol": "BTCUSDT", "quoteVolume": "123456.78"},
+            {"symbol": "ZEROUSDT", "quoteVolume": "0.0"},
+            {"symbol": "BADUSDT", "quoteVolume": "NaN"},
+        ],
+        received_time_ms=1_700_000_000_000,
+    )
+
+    assert [activity.symbol for activity in result.activities] == ["BTCUSDT", "ZEROUSDT"]
+    assert result.activities[0].quote_volume == Decimal("123456.78")
+    assert result.activities[1].quote_volume == 0
+    assert result.rejections[0].symbol == "BADUSDT"
 
 
 @pytest.mark.parametrize(
@@ -88,10 +105,11 @@ async def test_calls_public_endpoints_and_calibrates_clock_at_request_midpoint()
             "/api/v3/exchangeInfo": {"symbols": []},
             "/api/v3/ticker/bookTicker": [_ticker()],
             "/api/v3/avgPrice": {"mins": 5, "price": "100.15"},
+            "/api/v3/ticker/24hr": [{"symbol": "BTCUSDT", "quoteVolume": "123"}],
         }
         return httpx.Response(200, json=payloads[request.url.path])
 
-    times = iter([1_000, 1_020, 1_030, 1_040])
+    times = iter([1_000, 1_020, 1_030, 1_040, 1_050])
     client, http_client = _client(handler, now_ms=lambda: next(times))
     async with http_client:
         await client.ping()
@@ -99,6 +117,7 @@ async def test_calls_public_endpoints_and_calibrates_clock_at_request_midpoint()
         exchange_info = await client.exchange_info()
         book_tickers = await client.book_tickers()
         average_price = await client.average_price("BTCUSDT")
+        activities = await client.market_activities()
 
     assert clock.offset_ms == 90
     assert clock.round_trip_ms == 20
@@ -107,12 +126,14 @@ async def test_calls_public_endpoints_and_calibrates_clock_at_request_midpoint()
     assert average_price.price == Decimal("100.15")
     assert average_price.window_minutes == 5
     assert average_price.received_time_ms == 1_040
+    assert activities.activities[0].quote_volume == 123
     assert paths == [
         "/api/v3/ping",
         "/api/v3/time",
         "/api/v3/exchangeInfo",
         "/api/v3/ticker/bookTicker",
         "/api/v3/avgPrice",
+        "/api/v3/ticker/24hr",
     ]
 
 

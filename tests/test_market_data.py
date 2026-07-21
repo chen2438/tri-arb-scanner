@@ -7,6 +7,7 @@ from tri_arb.domain.models import (
     BookLevel,
     BookTicker,
     ConversionSide,
+    MarketActivity,
     MarketRules,
     OrderBook,
     PriceReference,
@@ -15,6 +16,7 @@ from tri_arb.exchange.mexc import (
     DepthUpdate,
     NormalizedBookTickers,
     NormalizedExchangeInfo,
+    NormalizedMarketActivities,
     ServerClock,
     WebSocketState,
     WebSocketStatus,
@@ -70,6 +72,14 @@ class FakeRestClient:
     async def average_price(self, symbol: str) -> PriceReference:
         return PriceReference(symbol, Decimal("1.5"), 5, 20_000)
 
+    async def market_activities(self) -> NormalizedMarketActivities:
+        return NormalizedMarketActivities(
+            tuple(
+                MarketActivity(market.symbol, Decimal("1000"), 20_000) for market in self.markets
+            ),
+            (),
+        )
+
 
 @pytest.mark.asyncio
 async def test_builds_coherent_ready_snapshot_from_public_rest_inputs() -> None:
@@ -111,6 +121,8 @@ async def test_builds_routes_for_all_supported_anchor_assets() -> None:
     )
 
     await service.refresh_metadata()
+    await service.refresh_tickers()
+    await service.refresh_market_activities()
     routes = (await service.snapshot()).routes
 
     assert {route.assets[0] for route in routes} == {"USDT", "USDC", "USD1"}
@@ -134,6 +146,9 @@ async def test_reconciles_ranked_routes_into_complete_depth_subscription_plan() 
     assert plan.selected_route_ids == (routes[0].route_id,)
     assert len(plan.symbols) == 3
     assert snapshot.status.subscription_count == 3
+    assert snapshot.status.core_market_count == 3
+    assert snapshot.status.core_route_count == 2
+    assert plan.core_symbols == tuple(sorted(plan.symbols))
     assert snapshot.depth_books == {}
 
     references = await service.refresh_price_references()

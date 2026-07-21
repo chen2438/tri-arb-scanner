@@ -17,12 +17,15 @@ from tri_arb.exchange.mexc.metadata import (
 )
 from tri_arb.exchange.mexc.rest import (
     BookTickerRejection,
+    MarketActivityRejection,
     MexcRestClient,
     MexcRestError,
     MexcRestProtocolError,
     NormalizedBookTickers,
+    NormalizedMarketActivities,
     ServerClock,
     normalize_book_tickers,
+    normalize_market_activities,
 )
 from tri_arb.exchange.mexc.subscriptions import (
     MarketLease,
@@ -42,6 +45,7 @@ __all__ = [
     "DepthTimingError",
     "DepthTimingViolation",
     "DepthUpdate",
+    "MarketActivityRejection",
     "MarketLease",
     "MarketMetadataRejection",
     "MexcDepthDecodeError",
@@ -52,6 +56,7 @@ __all__ = [
     "MexcRestProtocolError",
     "NormalizedBookTickers",
     "NormalizedExchangeInfo",
+    "NormalizedMarketActivities",
     "ServerClock",
     "SubscriptionPlan",
     "WebSocketState",
@@ -60,6 +65,7 @@ __all__ = [
     "depth_channel",
     "normalize_book_tickers",
     "normalize_exchange_info",
+    "normalize_market_activities",
     "reconcile_subscriptions",
     "validate_depth_timing",
 ]
