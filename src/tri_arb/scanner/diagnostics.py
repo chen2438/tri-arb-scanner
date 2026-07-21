@@ -15,6 +15,7 @@ NEAR_MISS_LIMIT = 10
 
 @dataclass(frozen=True, slots=True)
 class NearMiss:
+    exchange: str
     route_id: str
     assets: tuple[str, str, str, str]
     net_return_bps: Decimal
@@ -68,6 +69,7 @@ class DiagnosticsTracker:
                 continue
             near_misses.append(
                 NearMiss(
+                    exchange=simulation.route.exchange,
                     route_id=simulation.route.route_id,
                     assets=simulation.route.assets,
                     net_return_bps=simulation.net_return_bps,
@@ -143,6 +145,7 @@ def diagnostics_to_public(value: ScannerDiagnostics | None) -> dict[str, object]
         "rejection_counts": dict(value.rejection_counts),
         "near_misses": [
             {
+                "exchange": item.exchange,
                 "route_id": item.route_id,
                 "assets": list(item.assets),
                 "net_return_bps": str(item.net_return_bps),

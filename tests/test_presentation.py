@@ -16,6 +16,7 @@ def test_current_and_stored_opportunity_use_identical_decimal_string_contract() 
 
     assert current == stored
     assert current["state"] == "active"
+    assert current["exchange"] == "MEXC"
     assert isinstance(current["net_return_bps"], str)
     assert Decimal(current["net_return_bps"]) == Decimal("195")
     assert Decimal(current["estimated_profit_usdt"]) == Decimal("1.95")

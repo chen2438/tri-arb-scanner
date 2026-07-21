@@ -26,6 +26,7 @@ AUDIT_SCHEMA_VERSION = 1
 
 def _market(market: MarketRules) -> dict[str, Any]:
     return {
+        "exchange": market.exchange,
         "symbol": market.symbol,
         "base_asset": market.base_asset,
         "quote_asset": market.quote_asset,
@@ -48,6 +49,7 @@ def _market(market: MarketRules) -> dict[str, Any]:
 
 def _route(route: TriangularRoute) -> dict[str, Any]:
     return {
+        "exchange": route.exchange,
         "route_id": route.route_id,
         "assets": list(route.assets),
         "edges": [
@@ -153,6 +155,7 @@ def serialize_lifecycle(lifecycle: OpportunityLifecycle) -> str:
 def _decode_market(payload: dict[str, Any]) -> MarketRules:
     protection = payload.get("price_protection")
     return MarketRules(
+        exchange=payload.get("exchange", "MEXC"),
         symbol=payload["symbol"],
         base_asset=payload["base_asset"],
         quote_asset=payload["quote_asset"],

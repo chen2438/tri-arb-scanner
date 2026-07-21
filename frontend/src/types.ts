@@ -19,6 +19,7 @@ export type Leg = {
 
 export type Opportunity = {
   id: string;
+  exchange: string;
   route_id: string;
   state: "active" | "closed";
   assets: [string, string, string, string];
@@ -78,6 +79,7 @@ export type ScannerStatus = {
 };
 
 export type NearMiss = {
+  exchange: string;
   route_id: string;
   assets: [string, string, string, string];
   net_return_bps: string;

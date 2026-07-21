@@ -53,10 +53,13 @@ class MarketRules:
     taker_commission: Decimal
     allowed_sides: frozenset[ConversionSide]
     price_protection: PriceProtection | None = None
+    exchange: str = "MEXC"
 
     def __post_init__(self) -> None:
-        if not self.symbol or not self.base_asset or not self.quote_asset:
+        if not self.symbol or not self.base_asset or not self.quote_asset or not self.exchange:
             raise ValueError("market identity fields cannot be empty")
+        if self.exchange != self.exchange.strip().upper():
+            raise ValueError("exchange identity must be uppercase without surrounding whitespace")
         if self.base_asset == self.quote_asset:
             raise ValueError("base and quote assets must differ")
         if not 0 <= self.base_asset_precision <= 30:
@@ -138,9 +141,15 @@ class TriangularRoute:
             raise ValueError("route must contain three distinct assets")
         if len({edge.market.symbol for edge in self.edges}) != 3:
             raise ValueError("route must use three distinct markets")
+        if len({edge.market.exchange for edge in self.edges}) != 1:
+            raise ValueError("route cannot combine markets from different exchanges")
         for index, edge in enumerate(self.edges):
             if (edge.from_asset, edge.to_asset) != (self.assets[index], self.assets[index + 1]):
                 raise ValueError("route edges must follow the declared asset order")
+
+    @property
+    def exchange(self) -> str:
+        return self.edges[0].market.exchange
 
 
 @dataclass(frozen=True, slots=True)

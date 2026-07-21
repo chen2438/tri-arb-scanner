@@ -53,6 +53,7 @@ def audit_snapshot_to_public(snapshot_json: str) -> dict[str, Any]:
         closed_at = lifecycle["closed_at_ms"]
         return {
             "id": lifecycle["lifecycle_id"],
+            "exchange": route.get("exchange", route["edges"][0]["market"].get("exchange", "MEXC")),
             "route_id": lifecycle["route_id"],
             "state": "closed" if closed_at is not None else "active",
             "assets": route["assets"],

@@ -47,7 +47,8 @@ def build_market_graph(markets: Iterable[MarketRules]) -> Mapping[str, tuple[Con
 
 
 def _route_id(edges: tuple[ConversionEdge, ConversionEdge, ConversionEdge]) -> str:
-    return "|".join(f"{edge.market.symbol}:{edge.side}" for edge in edges)
+    exchange = edges[0].market.exchange
+    return "|".join((exchange, *(f"{edge.market.symbol}:{edge.side}" for edge in edges)))
 
 
 def enumerate_triangular_routes(
