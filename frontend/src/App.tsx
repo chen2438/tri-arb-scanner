@@ -99,7 +99,7 @@ function LegDetails({ opportunity }: { opportunity: Opportunity }) {
             <dl>
               <div><dt>方向</dt><dd>{leg.from_asset} → {leg.to_asset}</dd></div>
               <div><dt>平均成交价</dt><dd>{leg.average_price}</dd></div>
-              {leg.price_reference && <div><dt>5 分钟参考价</dt><dd>{leg.price_reference}</dd></div>}
+              {leg.price_reference && <div><dt>交易所价格保护参考价</dt><dd>{leg.price_reference}</dd></div>}
               {leg.price_protection_limit && <div><dt>{leg.side === "BUY" ? "买入保护上限" : "卖出保护下限"}</dt><dd>{leg.price_protection_limit}</dd></div>}
               <div><dt>输入 / 输出</dt><dd>{leg.input_amount} / {leg.output_amount}</dd></div>
               <div><dt>费率 / 手续费</dt><dd>{leg.fee_rate} / {leg.fee_amount}</dd></div>

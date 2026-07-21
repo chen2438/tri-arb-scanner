@@ -38,6 +38,7 @@ test("shows and expands a depth-confirmed live opportunity", () => {
   fireEvent.click(screen.getByRole("button", { name: /套利路径/ }));
   expect(screen.getByText("20 档深度已确认 · 仍为预估")).toBeInTheDocument();
   expect(screen.getByText("第 3 腿")).toBeInTheDocument();
+  expect(screen.getByText("交易所价格保护参考价")).toBeInTheDocument();
   expect(screen.getByText("买入保护上限")).toBeInTheDocument();
   expect(screen.getAllByText(/三腿非原子成交/)).toHaveLength(2);
 });
