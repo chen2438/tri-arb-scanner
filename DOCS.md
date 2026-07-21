@@ -3,11 +3,11 @@
 > 本文件是项目的**唯一权威功能与架构文档**，记录当前能力、目标能力、接口和安全边界。
 > 尚未实现的内容必须明确标为规划，不能写成已提供的能力。
 >
-> 最后更新：2026-07-21（里程碑 5：完成 API 与中文实时仪表盘）
+> 最后更新：2026-07-21（里程碑 6：完成 v0.1 发布验收）
 
 ## 1. 当前状态
 
-仓库已完成里程碑 5，并正在实施里程碑 6。发布验收尚未完成。当前已有能力为：
+仓库已完成里程碑 6，v0.1 只读扫描器已通过发布验收。当前已有能力为：
 
 - Python 3.12+ 项目、锁定依赖、`tri-arb doctor` / `tri-arb serve` CLI；
 - 严格 `TRI_ARB_` 配置、未知变量拒绝、localhost 绑定和上游 URL 安全校验；
@@ -44,6 +44,8 @@
 - 前端检测 sequence 跳跃或断线后丢弃增量并等待完整 snapshot；只展示后端 Decimal 字符串，提供
   30 秒同路径去重的可持久化声音提示、降级状态、移动端布局与完整风险措辞；
 - 3,000 个市场、2,000 条路径的确定性广筛容量夹具，CI 强制单轮低于 250 ms；
+- 使用真实 MEXC 公共行情完成 30 分钟持续运行、受控重启、SQLite 完整性与网页恢复验收；不含凭据的
+  结果保存在 `ACCEPTANCE.md`；
 - 本文记录的后续产品、计算、接口和实施计划；
 - `AGENTS.md` 中的 Agent 协作约定；
 - 本地及 CI 可复用的 Git 提交信息校验。
@@ -405,11 +407,13 @@ market_age_ms, leg_skew_ms, legs[]
 
 ### 里程碑 6：发布验收
 
-- 完成全部自动化检查与离线性能基准；
-- 运行 `tri-arb doctor`；
-- 使用 MEXC 公共行情连续运行至少 30 分钟，验证 REST 限频、WebSocket 重连、订阅更新、SQLite
-  写入和前端恢复；
-- 保存不含凭据的验收摘要，并明确观测期间是否出现已确认机会，不能为了通过验收伪造机会。
+**状态：已完成。**
+
+- 已完成全部自动化检查及 3,000 市场、2,000 路径、低于 250 ms 的离线性能基准；
+- 已运行 `tri-arb doctor`，配置、SQLite、Protobuf 与四个 MEXC 公共 REST 检查全部通过；
+- 已使用 MEXC 公共行情连续观测 30 分 12 秒，并在中点受控重启，验证 REST 周期、WebSocket 恢复、
+  动态订阅、SQLite 写入和前端 snapshot 恢复；
+- 已在 `ACCEPTANCE.md` 保存不含凭据的验收摘要；期间出现真实已确认机会，未伪造机会。
 
 ## 10. 测试与验收标准
 
@@ -441,8 +445,10 @@ market_age_ms, leg_skew_ms, legs[]
 
 ```bash
 .venv/bin/ruff check .
+.venv/bin/python scripts/generate_mexc_proto.py --check
 .venv/bin/pytest -q
 pnpm --dir frontend test
 pnpm --dir frontend build
+.venv/bin/tri-arb doctor
 python3 scripts/check_commit_messages.py --commit HEAD
 ```
