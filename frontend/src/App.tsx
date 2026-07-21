@@ -240,10 +240,10 @@ function DiagnosticsPanel({ diagnostics }: { diagnostics: ScannerDiagnostics | n
 }
 
 export default function App() {
-  const scanner = useScanner();
   const [tab, setTab] = useState<Tab>("live");
   const [anchorFilter, setAnchorFilter] = useState("ALL");
   const [exchangeFilter, setExchangeFilter] = useState("ALL");
+  const scanner = useScanner({ anchor: anchorFilter, exchange: exchangeFilter });
   const status = scanner.live.status;
   const degraded = scanner.live.connection !== "connected" || (status !== null && !status.ready);
   const filterOpportunities = (values: Opportunity[]) => values.filter((item) => (anchorFilter === "ALL" || item.anchor_asset === anchorFilter) && (exchangeFilter === "ALL" || item.exchange === exchangeFilter));
@@ -280,7 +280,7 @@ export default function App() {
         {(tab === "live" || tab === "history") && <div className="filter-bar"><label className="anchor-filter">交易所<select aria-label="交易所" value={exchangeFilter} onChange={(event) => setExchangeFilter(event.target.value)}><option value="ALL">全部</option><option value="MEXC">MEXC</option>{scanner.config?.okx_enabled && <option value="OKX">OKX</option>}{scanner.config?.binance_enabled && <option value="BINANCE">BINANCE</option>}{scanner.config?.bybit_enabled && <option value="BYBIT">BYBIT</option>}</select></label><label className="anchor-filter">锚定资产<select value={anchorFilter} onChange={(event) => setAnchorFilter(event.target.value)}><option value="ALL">全部</option>{scanner.config?.anchor_assets.map((anchor) => <option value={anchor} key={anchor}>{anchor}</option>)}</select></label></div>}
         {tab === "live" && <OpportunityTable opportunities={filterOpportunities(scanner.live.opportunities)} />}
         {tab === "diagnostics" && <DiagnosticsPanel diagnostics={status?.diagnostics ?? null} />}
-        {tab === "history" && <>{scanner.historyError && <p className="inline-error" role="alert">{scanner.historyError}</p>}<OpportunityTable opportunities={filterOpportunities(scanner.history)} history />{scanner.historyCursor && <button className="load-more" type="button" disabled={scanner.historyLoading} onClick={scanner.loadMoreHistory}>{scanner.historyLoading ? "正在加载…" : "加载更多历史"}</button>}</>}
+        {tab === "history" && <>{scanner.historyError && <p className="inline-error" role="alert">{scanner.historyError}</p>}<OpportunityTable opportunities={scanner.history} history />{scanner.historyCursor && <button className="load-more" type="button" disabled={scanner.historyLoading} onClick={scanner.loadMoreHistory}>{scanner.historyLoading ? "正在加载…" : "加载更多历史"}</button>}</>}
         {tab === "status" && <StatusPanel status={status} />}
       </section>
 

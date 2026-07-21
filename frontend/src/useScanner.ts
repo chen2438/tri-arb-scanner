@@ -9,8 +9,20 @@ import {
 import type { Opportunity, PublicConfig, SocketMessage } from "./types";
 
 type HistoryResponse = { items: Opportunity[]; next_cursor: string | null };
+type HistoryFilters = { anchor: string; exchange: string };
 
-export function useScanner() {
+export function buildHistoryQuery(
+  filters: HistoryFilters,
+  cursor?: string | null,
+): string {
+  const query = new URLSearchParams({ limit: "50" });
+  if (filters.anchor !== "ALL") query.set("anchor", filters.anchor);
+  if (filters.exchange !== "ALL") query.set("exchange", filters.exchange);
+  if (cursor) query.set("cursor", cursor);
+  return query.toString();
+}
+
+export function useScanner(historyFilters: HistoryFilters) {
   const [live, dispatch] = useReducer(liveReducer, initialLiveState);
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [history, setHistory] = useState<Opportunity[]>([]);
@@ -34,40 +46,47 @@ export function useScanner() {
   const knownLifecycleIds = useRef(new Set<string>());
   const expectedSequence = useRef<number | null>(null);
   const soundGate = useRef(new RouteSoundGate());
+  const historyRequestId = useRef(0);
 
   const loadHistory = useCallback(async (cursor?: string | null) => {
+    const requestId = ++historyRequestId.current;
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const query = cursor ? `?limit=50&cursor=${encodeURIComponent(cursor)}` : "?limit=50";
-      const response = await fetch(`/api/history${query}`);
+      const query = buildHistoryQuery(historyFilters, cursor);
+      const response = await fetch(`/api/history?${query}`);
       if (!response.ok) throw new Error(`history request failed: ${response.status}`);
       const payload = (await response.json()) as HistoryResponse;
+      if (requestId !== historyRequestId.current) return;
       setHistory((current) => (cursor ? [...current, ...payload.items] : payload.items));
       setHistoryCursor(payload.next_cursor);
     } catch {
-      setHistoryError("历史记录暂时无法加载，请稍后重试。");
+      if (requestId === historyRequestId.current) {
+        setHistoryError("历史记录暂时无法加载，请稍后重试。");
+      }
     } finally {
-      setHistoryLoading(false);
+      if (requestId === historyRequestId.current) setHistoryLoading(false);
     }
-  }, []);
+  }, [historyFilters.anchor, historyFilters.exchange]);
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([
-      fetch("/api/config", { signal: controller.signal }).then((response) => {
+    fetch("/api/config", { signal: controller.signal })
+      .then((response) => {
         if (!response.ok) throw new Error(`config request failed: ${response.status}`);
         return response.json();
-      }),
-      loadHistory(null),
-    ])
-      .then(([configuration]) => setConfig(configuration as PublicConfig))
+      })
+      .then((configuration) => setConfig(configuration as PublicConfig))
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           dispatch({ type: "socket.closed" });
         }
       });
     return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    void loadHistory(null);
   }, [loadHistory]);
 
   useEffect(() => {
