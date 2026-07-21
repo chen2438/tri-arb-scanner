@@ -3,164 +3,398 @@
 > 本文件是项目的**唯一权威功能与架构文档**，记录当前能力、目标能力、接口和安全边界。
 > 尚未实现的内容必须明确标为规划，不能写成已提供的能力。
 >
-> 最后更新：2026-07-21（建立项目规范与 MEXC 优先的初始范围）
+> 最后更新：2026-07-21（确定 MEXC 现货扫描器 v0.1 实施计划）
 
 ## 1. 当前状态
 
 仓库目前处于规范和设计基线阶段，尚未实现行情接入、套利计算、API、CLI 或前端。当前已有能力仅为：
 
-- 项目范围与安全边界文档；
-- Agent 协作约定；
+- 本文记录的 v0.1 产品、计算、接口和实施计划；
+- `AGENTS.md` 中的 Agent 协作约定；
 - 本地及 CI 可复用的 Git 提交信息校验。
 
-## 2. 产品目标
+下文除明确写为“当前已有”的内容外均为**规划能力**。
 
-Tri-Arb Scanner 是一个本地优先、可审计的**三角套利机会扫描器**。第一阶段聚焦 MEXC 现货市场，
-从同一交易所内寻找由三条可交易市场组成、起点与终点资产相同的闭环路径，例如
+## 2. 产品目标与边界
+
+Tri-Arb Scanner 是一个本地优先、可审计的**三角套利机会扫描器**。v0.1 聚焦 MEXC 现货市场，
+从全部可交易现货市场中寻找以 USDT 为起点和终点的三腿闭环，例如
 `USDT -> BTC -> ETH -> USDT`。
 
-扫描结果的目标是回答“在给定资金规模、实时盘口、手续费和交易规则下，这条路径是否仍有正的预估
-净收益”，而不只是展示三个最新成交价之间的理论价差。
+扫描结果回答的是：“以 100 USDT 为起始规模，在给定的三腿盘口、公开 taker 手续费、交易规则、
+逐腿取整和安全缓冲下，这条路径是否仍有正的预估净收益？”系统不得把仅由最新成交价推导的价差、
+未完成深度确认的广筛结果，或无法原子成交的估算描述为实际利润。
 
-### 2.1 v0.1 规划范围
+### 2.1 v0.1 确定范围
 
-- 通过 MEXC 公共 REST 接口获取市场元数据和初始快照；
-- 通过 MEXC 公共 WebSocket 行情维护最优报价，必要时维护有限档深度；
-- 从可交易现货市场构建有向资产图，并枚举三条边的闭环路径；
-- 按指定起始资产和名义金额模拟三腿兑换；
-- 计入方向对应的 bid/ask、逐腿手续费、数量/价格精度、步长、最小金额、深度与取整损耗；
-- 对行情新鲜度、缺失腿、乱序更新和连接恢复设置硬门槛；
-- 输出机会、计算输入、拒绝原因和时间信息，便于复算与审计；
-- 提供确定性测试和录制行情样本的离线重放测试。
+- 只使用 MEXC 公共 REST 与公共 WebSocket 行情，不需要 API Key；
+- 使用全部在线且允许现货交易的市场构建资产图，但只输出 `USDT -> A -> B -> USDT`；
+- 每秒对全市场最优报价进行一次广筛，再对排名靠前的路径订阅 20 档深度进行确认；
+- 默认模拟 100 USDT，计入逐腿手续费、深度滑点、数量取整、最小数量和最小金额；
+- 整条路径额外扣除 5 bps 安全缓冲，净收益达到 20 bps 才进入主机会列表；
+- 提供本机网页仪表盘、只读 REST/WebSocket API 和诊断 CLI；
+- SQLite 保存 7 天已确认机会历史，不录制全市场逐秒原始行情；
+- 页面可选择播放本地提示音，不接浏览器系统通知或第三方通知渠道。
 
 ### 2.2 暂不实施
 
 - 自动或人工触发下单、撤单、资金划转和提现；
-- 任何需要交易权限的 API Key；
-- 跨交易所套利、期货/永续合约、资金费率套利；
-- 保证成交、保证收益或将理论收益描述为实际利润；
-- 为尚未接入的交易所预建大量空实现。
+- 模拟账户、余额管理或任何私有账户接口；
+- 任何需要 API Key 的能力，包括账户级真实费率；
+- 非 USDT 锚定路径、跨交易所套利、期货/永续合约和资金费率套利；
+- 公网或局域网部署、登录、HTTPS、Docker 和 VPS 运维；
+- 完整行情归档，以及为尚未接入的交易所预建空适配器。
 
-## 3. 核心语义
+## 3. 核心领域语义
 
-### 3.1 有向兑换边
+### 3.1 市场与有向兑换边
 
-一个现货交易对 `BASE/QUOTE` 产生两条方向不同的兑换边：
+一个现货交易对 `BASE/QUOTE` 最多产生两条有向边：
 
-- `BASE -> QUOTE`：卖出 BASE，使用可成交 bid；
-- `QUOTE -> BASE`：用 QUOTE 买入 BASE，使用可成交 ask。
+- `BASE -> QUOTE`：卖出 BASE，消费 bids；
+- `QUOTE -> BASE`：买入 BASE，消费 asks。
 
-边必须携带交易对、方向、价格/深度、费用规则、数量规则、行情版本和时间信息。核心计算只消费统一
-领域模型，不直接读取 MEXC 原始字段。
+市场必须同时满足 `status=1`（或兼容的 `ENABLED`）和 `isSpotTradingAllowed=true`。方向还必须服从
+`tradeSideType`：`1` 允许双向，`2` 只保留买入边，`3` 只保留卖出边，`4` 不生成边。未知状态和
+未知方向值一律拒绝，不做猜测。
+
+每条归一化边至少携带：交易对、输入/输出资产、买卖方向、公开 taker 费率、基础资产精度、最小基础
+资产数量、最小/最大报价金额、盘口版本、MEXC 发送时间和本地接收时间。核心扫描器只消费领域模型，
+不读取 MEXC 原始字段名。
 
 ### 3.2 三角路径
 
-有效路径为 `A -> B -> C -> A`，其中 `A`、`B`、`C` 是三个互不相同的资产，三条边分别对应
-三个实际可交易市场。同一闭环的旋转或反向路径是否去重由展示需求决定，但计算必须保留真实执行顺序。
+有效路径固定为 `USDT -> A -> B -> USDT`：
 
-### 3.3 收益计算
+- `USDT`、`A`、`B` 必须互不相同；
+- 三条边必须对应三个不同的实际市场；
+- 路径按真实执行顺序保留，`USDT -> A -> B -> USDT` 与反向路径是两个不同候选；
+- 锚定 USDT 后不存在旋转重复，完全相同的三条有向边只保留一次；
+- 市场元数据刷新后重新构图，失效路径立即从广筛集合移除。
 
-设起始金额为 `x0`，每一腿按实际方向、订单簿可用量、交易规则和手续费得到下一腿可用金额：
+2026-07-21 的公共元数据观测到约 2,000 个可交易现货市场和 700 余条 USDT 有向三角路径；该数字仅
+用于容量设计，不能写成固定业务规则。
+
+### 3.3 三腿兑换
+
+所有金额、价格、数量、手续费和收益率使用 `Decimal`，禁止用二进制浮点数承担业务计算。
 
 ```text
-x1 = convert(x0, edge1)
+x1 = convert(100 USDT, edge1)
 x2 = convert(x1, edge2)
 x3 = convert(x2, edge3)
-net_return = x3 / x0 - 1
+modeled_return = x3 / 100 USDT - 1
+net_return = modeled_return - safety_buffer
+estimated_profit = 100 USDT * net_return
 ```
 
-`convert` 必须使用十进制定点计算，并在每一腿而非最终结果统一执行交易所要求的数量取整。展示层至少
-区分：
+`convert` 的确定语义为：
 
-- `gross_return`：计费和取整前的理论收益；
-- `net_return`：计入手续费、规则与深度后的预估净收益；
-- `executable_size`：当前共同盘口快照下可完整走完三腿的最大起始规模；
-- `reject_reasons`：数据或规则不足以形成有效机会的原因。
+1. 买入消费 asks，卖出消费 bids，按最优价格向外逐档累计；
+2. 每个市场的下单数量按 `baseAssetPrecision` 允许的小数位向下取整；
+3. `baseSizePrecision` 按官方文档作为最小基础资产数量，`quoteAmountPrecision` 作为最小报价金额，
+   不把二者误当作数量步长；
+4. 检查可获得的最小/最大金额规则，缺失的关键规则不推断；
+5. 每腿从该腿收到的资产中扣除 `takerCommission`，不假设 MX 抵扣、VIP 或活动费率；
+6. 上一腿产生但无法进入下一腿的取整余量记为 dust，不计入最终 USDT；
+7. 任一腿 20 档深度不足、规则不满足或数值非法时，整条路径拒绝。
 
-只有 `net_return` 高于配置阈值、三腿均满足交易规则且行情通过新鲜度检查时，才能标为候选机会。
-“候选”仍不代表三腿能够原子成交。
+`confirmed_capacity_usdt` 使用同一三腿模拟器在 `0.01 USDT` 精度上做单调二分查找：下界为 0，
+上界取三腿 20 档深度和市场最大报价金额共同反推的最小 USDT 容量；最多迭代 32 次。结果向下取整到
+0.01 USDT，并明确表示“20 档内已确认容量”，不能外推到未订阅深度。
 
-## 4. 架构基线
+展示和审计至少区分：
 
-后端采用 Python 3.12+、异步 I/O 和清晰的领域边界。首版保持单进程，除非测量结果证明需要引入
-额外基础设施。
+- `gross_return_bps`：按三腿最优价、未计手续费和取整的理论收益；
+- `modeled_return_bps`：计入 20 档深度、手续费、规则和取整后的收益；
+- `safety_buffer_bps`：整条路径统一扣除的保守缓冲，默认 5 bps；
+- `net_return_bps`：`modeled_return_bps - safety_buffer_bps`；
+- `estimated_profit_usdt`：默认 100 USDT 对应的预估净收益金额；
+- `confirmed_capacity_usdt`：当前 20 档共同深度支持的最大起始规模；
+- `reject_reasons`：无法确认的结构化原因。
+
+“深度已确认”仍不代表三腿能够原子成交，也不代表实际账户费率与公共费率完全一致。
+
+### 3.4 机会生命周期
+
+- 单次有效确认的 `net_return_bps >= 20` 时开启机会；
+- 已开启机会连续两次有效确认低于 15 bps 时关闭，避免阈值附近反复开关；
+- 行情陈旧、缺腿、市场失效、订阅被移除或连接中断时立即关闭，不等待两次确认；
+- 每个生命周期使用独立 UUID，路径 ID 由三条有向边稳定生成；
+- 进程启动时把数据库中残留的活跃生命周期以 `process_restart` 原因关闭；取得全新行情并再次越过
+  开启门槛后创建新生命周期，不跨重启延续旧机会；
+- 活跃机会按净收益从高到低排序；数值相同时按最近确认时间、路径 ID 稳定排序；
+- 前端事件最多每条路径每 250 ms 推送一次，但后端保留最新状态。
+
+## 4. 行情架构
+
+v0.1 采用单进程异步两阶段架构：REST 负责全市场广筛，WebSocket 负责少量候选路径的深度确认。
 
 ```text
-MEXC public REST/WebSocket
-          |
-          v
-exchange adapter -> normalized market state -> asset graph
-                                                |
-                                                v
-                                      route simulation/ranking
-                                                |
-                                                v
-                                       API/CLI + audit output
+MEXC exchangeInfo ------> 市场规则/有向资产图 ------> USDT 三角路径集合
+MEXC bookTicker --------> 每秒全路径广筛 -----------> Top 20 路径
+                                                        |
+                                                        v
+MEXC 20档 WebSocket ---> 候选深度状态 ----------> 三腿精确模拟
+                                                        |
+                                                        v
+                                       机会生命周期/SQLite/API/网页
 ```
 
-建议模块职责（规划，实际创建代码时可在不破坏边界的前提下细化）：
+### 4.1 REST 元数据与广筛
 
-- `exchange/mexc`：协议、订阅、重连、限频和 MEXC 字段归一化；
-- `domain`：市场、兑换边、路径、机会、费用与交易规则模型；
-- `market_state`：快照版本、时序、新鲜度和完整性；
-- `scanner`：路径枚举、金额模拟、过滤和排名；
-- `api` / `cli`：只读查询与运行控制；
-- `observability`：结构化日志、指标和可审计计算输入。
+- 启动时请求 `/api/v3/ping`、`/api/v3/time`、`/api/v3/exchangeInfo` 和全量
+  `/api/v3/ticker/bookTicker`；
+- `exchangeInfo` 每 5 分钟刷新；服务器时间每 60 秒校准；
+- 全量 `bookTicker` 默认每 1 秒请求一次，上一请求未完成时不并发发起下一次；
+- 单次 HTTP 超时 3 秒；429 必须服从 `Retry-After`，其他可恢复错误按 1、2、4、8 秒指数退避，
+  最大 30 秒并带抖动；
+- REST book ticker 没有交易所源时间，因此只作为内部广筛输入，绝不直接发布机会；
+- 每轮遍历全部有效路径，使用最优 bid/ask 和公开手续费计算广筛分数，不用顶档数量冒充完整深度；
+- 按分数选取最多 20 条路径；不足 20 条时不填充无效路径。
 
-若后续增加前端，前端只消费后端归一化结果，不自行重复收益计算。
+### 4.2 WebSocket 深度确认
 
-## 5. MEXC 接入原则
+- 连接使用 `wss://wbs-api.mexc.com/ws`；
+- 订阅 `spot@public.limit.depth.v3.api.pb@<symbol>@20`，每次消息视为该市场完整 20 档快照；
+- Top 20 路径最多涉及 60 个不同市场，按稳定排序分配到两条连接，每条不超过官方上限 30 个订阅；
+- 订阅协调器每 5 秒对齐一次目标集合；市场订阅至少保留 15 秒，期满后才允许因排名变化移除；
+- 协调时先保留尚未满足 15 秒驻留期的市场，再按广筛排名贪心加入完整路径；若加入后会超过 60 个
+  市场则暂不加入。驻留期结束后，移除仅被落选路径使用且不被更高排名路径共享的市场；任何时刻都
+  不突破两条连接和 60 个市场的硬上限；
+- 路径只有在其三个市场均已收到当前订阅周期内的新快照后才能确认；
+- 三腿 MEXC `sendTime` 相对校准后的服务器时间均不得超过 2 秒，最早和最晚腿之差不得超过 1 秒；
+- 每 20 秒发送 PING；断线按指数退避重连，并在恢复后重新订阅；
+- 单连接运行到 23 小时 50 分钟时主动轮换，避免触发官方 24 小时连接上限；
+- 解码、版本、字段或订阅响应异常时 fail-closed，并在状态接口暴露明确原因。
 
-- 实现时以当时的 MEXC 官方 API 文档为准，并在测试夹具中保存脱敏的代表性响应；不能依靠记忆硬编码
-  endpoint、字段、限频、心跳或精度语义。
-- 启动顺序应先获取市场元数据和 REST 快照，再建立/确认增量流；尚未完成一致性衔接时不发布机会。
-- 对断线、重连、订阅失败、限频、服务端错误、未知交易对状态和时间偏差采取 fail-closed：停止发布
-  新机会，同时保留可诊断状态。
-- 首版只使用公共行情。若将来确需只读凭据，权限必须最小化，并在 `DOCS.md` 先明确数据用途和泄露边界。
+MEXC WebSocket 使用 Protobuf。项目固定官方
+[`mexcdevelop/websocket-proto`](https://github.com/mexcdevelop/websocket-proto) 提交
+`7b8ac7a6681f28551612a5a7cefbb7e09b56bb85`，保存其 Apache-2.0 LICENSE 和来源说明，生成代码
+必须可由脚本重复生成并在 CI 检查无漂移。协议或 endpoint 变更时先更新夹具和本文，再升级固定版本。
 
-## 6. 配置与凭据
+官方参考：
 
-配置项统一使用 `TRI_ARB_` 前缀。计划中的首批配置包括起始资产、扫描名义金额、最低净收益、最大
-行情年龄、手续费假设和 MEXC 公共接口地址。正式变量名和默认值在实现配置模型时确定并同步到这里。
+- [MEXC Spot API v3](https://mexcdevelop.github.io/apidocs/spot_v3_en/)
+- [MEXC WebSocket Protobuf definitions](https://github.com/mexcdevelop/websocket-proto)
 
-- `.env.example` 只包含安全示例和说明，不包含真实凭据；
-- `.env` 永不提交、输出或覆盖已有值；
-- 未知或非法配置必须在启动时明确报错，不能静默回退到可能改变计算语义的值；
-- 手续费未知时必须明确标记结果不可执行，不能默认当作零手续费。
+## 5. 系统架构与技术选型
 
-## 7. 安全与正确性边界
+### 5.1 后端
 
-- 扫描器当前只读，不包含交易执行路径；
-- 所有金额计算使用十进制定点类型，跨模块不得退化为二进制浮点数；
-- 每个机会必须可追溯到三条行情、市场规则、费用输入、取整过程和时间戳；
-- 行情超时、缺腿、顺序不一致、深度不足、规则未知或计算异常时不发布候选；
-- 日志不得包含凭据，不得把完整环境变量或敏感请求头写入异常上下文；
-- 外部接口数据一律视为不可信输入，必须经过大小、类型和数值范围校验。
+- Python 3.12+；
+- FastAPI + Uvicorn：同源 REST、WebSocket 和静态前端；
+- Pydantic Settings：严格配置解析；
+- HTTPX：MEXC REST；
+- websockets + protobuf：MEXC WebSocket；
+- SQLAlchemy + aiosqlite：SQLite WAL 持久化；
+- 单进程 asyncio，不引入 Redis、Celery 或消息队列。
 
-## 8. 验证要求
+建议模块边界：
 
-实现代码后，`DOCS.md` 必须记录并持续维护可直接运行的具体命令。最低验收范围为：
+- `exchange/mexc`：REST、WebSocket、Protobuf、重连、限频和字段归一化；
+- `domain`：市场、兑换边、路径、深度、机会和拒绝原因；
+- `market_state`：快照版本、时序、新鲜度和订阅状态；
+- `scanner`：资产图、广筛、深度模拟、容量与生命周期；
+- `storage`：SQLite 模型、串行写入和保留策略；
+- `api` / `cli`：只读接口、状态推送、启动和诊断；
+- `observability`：结构化日志、计数器和错误摘要。
 
-- 静态检查与格式检查；
-- 领域模型、双向兑换、手续费、逐腿取整和阈值边界的单元测试；
-- 路径去重、无效市场和深度不足的测试；
-- REST 快照与 WebSocket 增量衔接、乱序、陈旧数据和重连的确定性测试；
-- 使用录制的 MEXC 公共响应完成适配器契约测试；
-- 提交信息策略检查：`python3 scripts/check_commit_messages.py --commit HEAD`。
+### 5.2 前端
 
-在测试框架尚未落地前，本次规范迁移的验证命令为：
+- React + TypeScript + Vite，使用 pnpm 锁定依赖；
+- 中文响应式界面，由 FastAPI 同源托管，不单独部署；
+- 前端只展示后端 Decimal 字符串，不自行重复收益计算；
+- 活跃机会表展示路径、净收益、预估利润、确认容量和行情年龄；
+- 展开行展示三腿方向、市场、档位均价、输入/输出、费用、dust 和时间；
+- 历史页展示开启、峰值与关闭原因；状态区展示 REST 年龄、路径数、订阅数、连接与最近错误；
+- 声音只在新生命周期开启时播放，同一路径 30 秒内去重，开关保存在浏览器 localStorage；
+- 断线后自动重连后端 WebSocket，并以服务端完整快照覆盖本地状态。
+
+### 5.3 存储
+
+SQLite 只保存：
+
+- `opportunity_lifecycles`：路径、开启/关闭时间、最新值、峰值和关闭原因；
+- `opportunity_events`：开启、净收益峰值至少提高 1 bp、关闭时的完整三腿计算输入；
+- `schema_version`：数据库结构版本。
+
+不保存全市场 book ticker、未入选的广筛路径或每条深度更新。启动时及每 24 小时清理超过 7 天的已关闭
+生命周期和事件；活跃机会不因保留期被删除。数据库写入通过单一异步队列串行化。
+
+## 6. 配置
+
+配置统一使用 `TRI_ARB_` 前缀，未知键和非法值必须在启动时明确报错。
+
+| 变量 | 默认值 | 说明 |
+| --- | ---: | --- |
+| `TRI_ARB_HOST` | `127.0.0.1` | v0.1 只允许回环地址 |
+| `TRI_ARB_PORT` | `8000` | HTTP 端口 |
+| `TRI_ARB_MEXC_REST_URL` | `https://api.mexc.com` | MEXC 公共 REST 根地址 |
+| `TRI_ARB_MEXC_WS_URL` | `wss://wbs-api.mexc.com/ws` | MEXC 公共 WebSocket 地址 |
+| `TRI_ARB_ANCHOR_ASSET` | `USDT` | v0.1 只接受 USDT |
+| `TRI_ARB_NOTIONAL` | `100` | 起始 USDT 金额 |
+| `TRI_ARB_MIN_NET_RETURN_BPS` | `20` | 机会开启门槛 |
+| `TRI_ARB_CLOSE_NET_RETURN_BPS` | `15` | 连续两次低于该值后关闭 |
+| `TRI_ARB_SAFETY_BUFFER_BPS` | `5` | 整条路径安全缓冲 |
+| `TRI_ARB_BOOK_TICKER_INTERVAL_MS` | `1000` | 全市场广筛周期 |
+| `TRI_ARB_SHORTLIST_ROUTES` | `20` | 深度确认路径上限 |
+| `TRI_ARB_DEPTH_LEVELS` | `20` | WebSocket 深度档数，v0.1 固定为 20 |
+| `TRI_ARB_MAX_DEPTH_AGE_MS` | `2000` | 单腿最大行情年龄 |
+| `TRI_ARB_MAX_LEG_SKEW_MS` | `1000` | 三腿最大时间偏差 |
+| `TRI_ARB_HISTORY_RETENTION_DAYS` | `7` | 已关闭机会保留期 |
+| `TRI_ARB_DATABASE_URL` | `sqlite+aiosqlite:///./tri_arb.db` | 本地数据库 |
+
+`.env.example` 只包含安全示例；本地 `.env` 永不提交、输出或覆盖已有值。MEXC URL 允许在测试中指向
+本地 fixture server；正式运行拒绝非 HTTPS/WSS 的非回环地址。配置通过只读 API 展示脱敏后的有效值，
+v0.1 不支持在网页中修改。
+
+## 7. CLI 与公共接口
+
+### 7.1 CLI
+
+- `tri-arb serve`：启动行情、扫描、数据库、API 和网页；
+- `tri-arb doctor`：检查配置、数据库、MEXC ping/time/exchangeInfo、公共 book ticker 和本地
+  Protobuf 固定夹具；不创建 API Key、不访问私有接口。
+
+服务缺少完整元数据或首份全市场报价时可以存活但未就绪；行情暂时中断时进程继续运行，状态转为
+degraded 并关闭依赖该行情的机会。
+
+### 7.2 REST
+
+- `GET /api/health/live`：进程存活；
+- `GET /api/health/ready`：配置、数据库、元数据和全市场广筛是否就绪；
+- `GET /api/status`：扫描阶段、市场/边/路径数、REST 年龄、WebSocket 连接和订阅数、最近错误；
+- `GET /api/config`：当前有效的非敏感配置；
+- `GET /api/opportunities`：当前活跃机会，支持 `limit` 和游标；
+- `GET /api/opportunities/{id}`：一个生命周期及最新完整三腿明细；
+- `GET /api/history`：已关闭生命周期，支持 `cursor`、`limit`、`route` 和时间过滤。
+
+分页 `limit` 默认 50、最大 200；游标为不透明字符串。未知 ID 返回 404，非法参数返回结构化 422。
+所有 Decimal 编码为十进制字符串，所有时间编码为 UTC ISO-8601，禁止先转成 JSON number。
+
+核心机会响应包含：
+
+```text
+id, route_id, state, assets, start_amount, final_amount,
+gross_return_bps, modeled_return_bps, safety_buffer_bps, net_return_bps,
+estimated_profit_usdt, confirmed_capacity_usdt,
+first_seen_at, last_confirmed_at, peak_net_return_bps, close_reason,
+market_age_ms, leg_skew_ms, legs[]
+```
+
+每个 `leg` 包含 `symbol`、`side`、`from_asset`、`to_asset`、`input_amount`、`output_amount`、
+`average_price`、`fee_rate`、`fee_amount`、`dust_amount`、`levels_consumed`、`book_version`、
+`source_time` 和 `received_time`。
+
+### 7.3 WebSocket
+
+`/ws/opportunities` 连接成功后先发送一份 `snapshot`，随后发送：
+
+- `opportunity.upsert`：机会开启或数值更新；
+- `opportunity.closed`：机会关闭及原因；
+- `status.changed`：行情、扫描或连接健康状态变化；
+- `heartbeat`：每 15 秒发送，供前端判断连接存活。
+
+消息包含单调递增的进程内 `sequence`。前端检测到 sequence 跳跃或重连时丢弃本地增量状态，以新的
+完整 snapshot 为准；v0.1 不提供跨进程事件补发。
+
+## 8. 安全、失败与审计边界
+
+- 后端硬性拒绝监听非 `127.0.0.1`、`localhost` 或 `::1` 地址；
+- 代码中不存在私有 MEXC endpoint、签名逻辑、下单模型或交易权限配置；
+- 外部响应一律校验类型、长度、正数范围、资产/交易对关系和 Decimal 位数；
+- 手续费、精度、最小金额、关键行情或时间信息缺失时 fail-closed；
+- REST 429 服从 `Retry-After`，禁止用并发重试放大限频；
+- WebSocket 断线、订阅错误和时间异常立即使对应行情失效；
+- 日志不得输出完整环境、请求头或数据库内容；当前版本没有任何凭据应当存在；
+- 每个机会事件必须能够使用保存的三腿盘口、规则、费率和取整过程离线复算；
+- UI 必须始终使用“预估”“深度已确认”“非原子成交”等措辞，不使用“保证盈利”。
+
+## 9. 实施里程碑
+
+每个里程碑使用独立、可验收的提交，并在实现时同步把本文的“规划”更新为真实状态。
+
+### 里程碑 1：工程骨架
+
+- 建立 Python 包、`pyproject.toml`、锁定依赖、`tri-arb` CLI 和严格配置模型；
+- 建立 React/TypeScript/Vite 前端、pnpm 锁文件及 FastAPI 同源静态托管；
+- 扩展 CI 为提交信息、Ruff、Pytest、Vitest、TypeScript 和生产构建；
+- 提供 `.env.example`，并完成 localhost 绑定限制。
+
+### 里程碑 2：领域模型与路径计算
+
+- 实现 MEXC 元数据归一化、有向资产图和 USDT 三角路径枚举；
+- 实现 Decimal 买卖转换、多档消费、费率、取整、dust、规则检查和确认容量；
+- 提供完全离线的固定输入单元测试，不依赖网络。
+
+### 里程碑 3：MEXC 行情
+
+- 实现 REST 元数据、时间校准、全量 book ticker、退避和健康状态；
+- 固定并生成官方 Protobuf，解析 20 档 partial-depth；
+- 实现 Top 20 订阅协调、两连接分片、PING、重连和主动轮换；
+- 使用录制的脱敏公共响应与二进制帧完成适配器契约测试。
+
+### 里程碑 4：扫描、生命周期与存储
+
+- 将广筛、深度确认、精确模拟和 20/15 bps 生命周期串成异步流水线；
+- 实现 SQLite schema、机会事件审计、峰值记录和 7 天清理；
+- 实现结构化日志、状态计数器和确定性离线重放。
+
+### 里程碑 5：API 与网页
+
+- 实现 REST、后端 WebSocket 的 snapshot/增量协议和游标分页；
+- 实现中文实时机会、三腿明细、历史和健康状态页面；
+- 实现声音提示、重连覆盖和降级状态展示；
+- 完成浏览器验证和生产构建。
+
+### 里程碑 6：发布验收
+
+- 完成全部自动化检查与离线性能基准；
+- 运行 `tri-arb doctor`；
+- 使用 MEXC 公共行情连续运行至少 30 分钟，验证 REST 限频、WebSocket 重连、订阅更新、SQLite
+  写入和前端恢复；
+- 保存不含凭据的验收摘要，并明确观测期间是否出现已确认机会，不能为了通过验收伪造机会。
+
+## 10. 测试与验收标准
+
+### 10.1 自动化测试
+
+- 双向兑换、三腿费用、逐腿取整、dust、跨档滑点、20 档不足和容量边界；
+- 20/15 bps 精确边界、连续两次关闭、陈旧数据立即关闭和峰值事件阈值；
+- 市场状态、`tradeSideType`、三个不同资产/市场、路径去重和元数据热刷新；
+- 零/负/NaN/超大报价、缺失费率、最小数量、最小报价金额和未知规则；
+- REST 超时、429 `Retry-After`、5xx 退避、并发轮询抑制和服务器时钟偏移；
+- Protobuf 固定二进制样本、30 订阅分片、目标集合切换、PING、断线重连和主动轮换；
+- 2 秒新鲜度、1 秒腿间偏差、订阅前旧快照隔离和乱序消息；
+- SQLite 开启/峰值/关闭事件、重启恢复、7 天清理和串行写入；
+- REST Decimal 字符串、游标、404/422，WebSocket snapshot、sequence 跳跃和重连；
+- 前端排序、明细展开、空状态、degraded 状态、历史分页和声音去重；
+- 使用至少 3,000 个市场、2,000 条路径的合成夹具完成一轮广筛，CI 单轮不超过 250 ms。
+
+### 10.2 发布不变量
+
+- 没有 API Key 也能完成全部正式能力；
+- 未经三腿 20 档深度确认的结果不会出现在机会 API；
+- 任何活跃机会都能从 SQLite 事件或当前详情中复算；
+- 任何陈旧、缺腿、连接断开或规则未知状态都不会继续显示为活跃；
+- 后端不能绑定公网或局域网地址；
+- 前端不承担业务计算，刷新或重连后与后端 snapshot 一致；
+- 工程验收以正确、可复现、可恢复为准，不以发现机会或盈利为条件。
+
+实现后的标准验证命令固定为：
+
+```bash
+.venv/bin/ruff check .
+.venv/bin/pytest -q
+pnpm --dir frontend test
+pnpm --dir frontend build
+python3 scripts/check_commit_messages.py --commit HEAD
+```
+
+在工程骨架尚未实现前，当前仅可执行提交策略校验：
 
 ```bash
 python3 -m py_compile scripts/check_commit_messages.py
 python3 scripts/check_commit_messages.py --message-file <message-file>
 ```
-
-## 9. 待决策事项
-
-以下事项在实现对应功能前通过实际数据和官方文档确定，并更新本文：
-
-- v0.1 使用最优报价还是维护多档本地订单簿；
-- 默认起始资产与扫描金额档位；
-- 手续费来源（保守配置、公开信息或未来的账户级只读数据）；
-- 机会输出优先采用 CLI、HTTP API，还是二者同时提供；
-- 行情录制格式、保留周期与性能目标。
