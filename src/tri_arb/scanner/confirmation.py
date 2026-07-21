@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 
-from tri_arb.domain.models import RouteSimulation
+from tri_arb.domain.models import OrderBook, RouteSimulation
 from tri_arb.domain.simulation import confirmed_capacity, simulate_route
 from tri_arb.exchange.mexc import (
     DepthTiming,
@@ -36,6 +36,7 @@ class ConfirmationOutcome:
     confirmed_capacity_usdt: Decimal | None
     timing: DepthTiming | None
     reject_reasons: tuple[str, ...]
+    books: tuple[OrderBook, ...] = ()
 
     @property
     def accepted(self) -> bool:
@@ -90,7 +91,7 @@ def confirm_candidate(
             max_leg_skew_ms=max_leg_skew_ms,
         )
     except DepthTimingError as error:
-        return ConfirmationOutcome(candidate, None, None, None, (error.violation.value,))
+        return ConfirmationOutcome(candidate, None, None, None, (error.violation.value,), books)
     books_by_symbol = {book.symbol: book for book in books}
     outcome = simulate_route(
         candidate.route,
@@ -105,6 +106,7 @@ def confirm_candidate(
             None,
             timing,
             tuple(reason.value for reason in outcome.reject_reasons),
+            books,
         )
     try:
         capacity = confirmed_capacity(
@@ -119,5 +121,6 @@ def confirm_candidate(
             None,
             timing,
             (ConfirmationRejectReason.CAPACITY_UNAVAILABLE.value,),
+            books,
         )
-    return ConfirmationOutcome(candidate, outcome.simulation, capacity, timing, ())
+    return ConfirmationOutcome(candidate, outcome.simulation, capacity, timing, (), books)

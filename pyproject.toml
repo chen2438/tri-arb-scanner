@@ -15,7 +15,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "protobuf>=7.35,<8",
   "pydantic-settings>=2.14,<3",
-  "sqlalchemy>=2.0,<3",
+  "sqlalchemy[asyncio]>=2.0,<3",
   "uvicorn[standard]>=0.51,<1",
   "websockets>=16,<17",
 ]

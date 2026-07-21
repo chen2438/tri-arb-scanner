@@ -44,6 +44,7 @@ class OpportunityLifecycle:
     current_simulation: RouteSimulation
     confirmed_capacity_usdt: Decimal
     timing: DepthTiming
+    current_confirmation: ConfirmationOutcome
     consecutive_below_close: int = 0
     closed_at_ms: int | None = None
     close_reason: CloseReason | None = None
@@ -143,6 +144,7 @@ class OpportunityTracker:
             current_simulation=simulation,
             confirmed_capacity_usdt=capacity,
             timing=timing,
+            current_confirmation=outcome,
         )
         self._active[lifecycle.route_id] = lifecycle
         return LifecycleEvent(LifecycleEventType.OPENED, occurred_at_ms, lifecycle)
@@ -202,6 +204,7 @@ class OpportunityTracker:
                 current_simulation=simulation,
                 confirmed_capacity_usdt=capacity,
                 timing=timing,
+                current_confirmation=outcome,
                 consecutive_below_close=below_count,
             )
             self._active[route_id] = updated
