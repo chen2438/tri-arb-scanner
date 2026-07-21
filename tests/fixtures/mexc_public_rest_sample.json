@@ -1,0 +1,32 @@
+{
+  "recorded_at": "2026-07-21T13:50:00Z",
+  "ping": {},
+  "time": {"serverTime": 1784638200000},
+  "exchangeInfo": {
+    "symbols": [
+      {
+        "symbol": "BTCUSDT", "status": "1", "baseAsset": "BTC", "baseAssetPrecision": 8,
+        "quoteAsset": "USDT", "quoteAmountPrecision": "1", "baseSizePrecision": "0.000001",
+        "maxQuoteAmount": "10000000", "isSpotTradingAllowed": true, "tradeSideType": 1,
+        "takerCommission": "0.0005"
+      },
+      {
+        "symbol": "ETHBTC", "status": "1", "baseAsset": "ETH", "baseAssetPrecision": 6,
+        "quoteAsset": "BTC", "quoteAmountPrecision": "0.000001", "baseSizePrecision": "0",
+        "maxQuoteAmount": "100", "isSpotTradingAllowed": true, "tradeSideType": 1,
+        "takerCommission": "0.001"
+      },
+      {
+        "symbol": "ETHUSDT", "status": "1", "baseAsset": "ETH", "baseAssetPrecision": 6,
+        "quoteAsset": "USDT", "quoteAmountPrecision": "1", "baseSizePrecision": "0",
+        "maxQuoteAmount": "10000000", "isSpotTradingAllowed": true, "tradeSideType": 1,
+        "takerCommission": "0.001"
+      }
+    ]
+  },
+  "bookTicker": [
+    {"symbol": "BTCUSDT", "bidPrice": "66626.76", "bidQty": "7.94505061", "askPrice": "66626.77", "askQty": "0.00033100"},
+    {"symbol": "ETHBTC", "bidPrice": "0.03850", "bidQty": "12.5", "askPrice": "0.03851", "askQty": "8.2"},
+    {"symbol": "ETHUSDT", "bidPrice": "2564.10", "bidQty": "18.4", "askPrice": "2564.11", "askQty": "21.3"}
+  ]
+}

@@ -214,6 +214,14 @@ class MexcDepthWebSocketShard:
                     delay = min(30.0, delay * (0.8 + 0.4 * self._jitter()))
                     attempt += 1
                     await self._status(WebSocketState.BACKOFF, f"{type(error).__name__}: {error}")
-                    await self._sleep(delay)
+                    sleep_task = asyncio.create_task(self._sleep(delay))
+                    stop_task = asyncio.create_task(stop.wait())
+                    done, pending = await asyncio.wait(
+                        {sleep_task, stop_task}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    await asyncio.gather(*done)
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
         finally:
             await self._status(WebSocketState.STOPPED)
