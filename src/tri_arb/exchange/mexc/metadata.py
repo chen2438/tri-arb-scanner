@@ -1,0 +1,149 @@
+"""Normalize MEXC exchangeInfo payloads into domain market rules."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from typing import Any
+
+from tri_arb.domain.models import ConversionSide, MarketRules
+
+
+class MexcMetadataError(ValueError):
+    """Raised when the exchangeInfo envelope is structurally unusable."""
+
+
+@dataclass(frozen=True, slots=True)
+class MarketMetadataRejection:
+    symbol: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedExchangeInfo:
+    markets: tuple[MarketRules, ...]
+    rejections: tuple[MarketMetadataRejection, ...]
+
+
+def _decimal(raw: Mapping[str, Any], field: str) -> Decimal:
+    try:
+        value = Decimal(str(raw[field]))
+    except (KeyError, InvalidOperation, ValueError) as error:
+        raise MexcMetadataError(f"invalid {field}") from error
+    if not value.is_finite():
+        raise MexcMetadataError(f"invalid {field}")
+    return value
+
+
+def _integer(raw: Mapping[str, Any], field: str) -> int:
+    value = raw.get(field)
+    if isinstance(value, bool):
+        raise MexcMetadataError(f"invalid {field}")
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError) as error:
+        raise MexcMetadataError(f"invalid {field}") from error
+    if not number.is_finite() or number != number.to_integral_value():
+        raise MexcMetadataError(f"invalid {field}")
+    return int(number)
+
+
+def _identity(raw: Mapping[str, Any], field: str) -> str:
+    value = raw.get(field)
+    if not isinstance(value, str) or not value or value != value.strip() or value != value.upper():
+        raise MexcMetadataError(f"invalid {field}")
+    return value
+
+
+def _status(raw: Mapping[str, Any]) -> bool:
+    status = raw.get("status")
+    if isinstance(status, bool):
+        raise MexcMetadataError("unknown status")
+    if status in {"1", 1, "ENABLED"}:
+        return True
+    if status in {"2", 2, "3", 3, "PAUSED", "OFFLINE"}:
+        return False
+    raise MexcMetadataError("unknown status")
+
+
+def _allowed_sides(raw: Mapping[str, Any]) -> frozenset[ConversionSide]:
+    side_type = str(raw.get("tradeSideType"))
+    if side_type == "1":
+        return frozenset({ConversionSide.BUY, ConversionSide.SELL})
+    if side_type == "2":
+        return frozenset({ConversionSide.BUY})
+    if side_type == "3":
+        return frozenset({ConversionSide.SELL})
+    if side_type == "4":
+        return frozenset()
+    raise MexcMetadataError("unknown tradeSideType")
+
+
+def _min_base_quantity(raw: Mapping[str, Any], base_asset_precision: int) -> Decimal:
+    explicit_minimum = _decimal(raw, "baseSizePrecision")
+    if explicit_minimum == 0:
+        # MEXC currently publishes zero for many enabled markets. Treat it as
+        # "no stricter minimum" and retain the smallest representable quantity.
+        return Decimal(1).scaleb(-base_asset_precision)
+    return explicit_minimum
+
+
+def _normalize_symbol(raw: Mapping[str, Any]) -> MarketRules | None:
+    if not _status(raw):
+        return None
+    spot_allowed = raw.get("isSpotTradingAllowed")
+    if not isinstance(spot_allowed, bool):
+        raise MexcMetadataError("invalid isSpotTradingAllowed")
+    if not spot_allowed:
+        return None
+    allowed_sides = _allowed_sides(raw)
+    if not allowed_sides:
+        return None
+    base_asset_precision = _integer(raw, "baseAssetPrecision")
+    try:
+        return MarketRules(
+            symbol=_identity(raw, "symbol"),
+            base_asset=_identity(raw, "baseAsset"),
+            quote_asset=_identity(raw, "quoteAsset"),
+            base_asset_precision=base_asset_precision,
+            min_base_quantity=_min_base_quantity(raw, base_asset_precision),
+            min_quote_amount=_decimal(raw, "quoteAmountPrecision"),
+            max_quote_amount=_decimal(raw, "maxQuoteAmount"),
+            taker_commission=_decimal(raw, "takerCommission"),
+            allowed_sides=allowed_sides,
+        )
+    except ValueError as error:
+        if isinstance(error, MexcMetadataError):
+            raise
+        raise MexcMetadataError(str(error)) from error
+
+
+def normalize_exchange_info(payload: Mapping[str, Any]) -> NormalizedExchangeInfo:
+    symbols = payload.get("symbols")
+    if not isinstance(symbols, list):
+        raise MexcMetadataError("exchangeInfo symbols must be a list")
+    markets: list[MarketRules] = []
+    rejections: list[MarketMetadataRejection] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(symbols):
+        if not isinstance(raw, Mapping):
+            raise MexcMetadataError(f"symbol at index {index} must be an object")
+        raw_symbol = raw.get("symbol")
+        if isinstance(raw_symbol, str):
+            if raw_symbol in seen:
+                raise MexcMetadataError(f"duplicate symbol: {raw_symbol}")
+            seen.add(raw_symbol)
+        try:
+            market = _normalize_symbol(raw)
+        except MexcMetadataError as error:
+            symbol = raw.get("symbol", f"index {index}")
+            rejections.append(MarketMetadataRejection(str(symbol), str(error)))
+            continue
+        if market is None:
+            continue
+        markets.append(market)
+    return NormalizedExchangeInfo(
+        markets=tuple(sorted(markets, key=lambda market: market.symbol)),
+        rejections=tuple(sorted(rejections, key=lambda rejection: rejection.symbol)),
+    )
