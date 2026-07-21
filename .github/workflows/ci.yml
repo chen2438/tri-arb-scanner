@@ -46,7 +46,7 @@ jobs:
         run: pytest -vv --tb=short
 
   frontend:
-    name: Frontend (vitest + tsc + vite build)
+    name: Frontend and wheel assets
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -61,9 +61,16 @@ jobs:
           node-version: "22.23.1"
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Test
         run: pnpm test
       - name: Build
         run: pnpm build
+      - name: Build distributable wheel
+        run: python -m pip wheel .. --no-deps --wheel-dir ../wheelhouse
+      - name: Verify packaged dashboard
+        run: python ../scripts/check_wheel_contents.py ../wheelhouse/*.whl

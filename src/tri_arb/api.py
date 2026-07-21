@@ -274,7 +274,9 @@ def create_app(
         finally:
             resolved_services.hub.unsubscribe(queue)
 
-    frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    packaged_frontend = Path(__file__).resolve().parent / "frontend_dist"
+    editable_frontend = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    frontend_dist = packaged_frontend if packaged_frontend.is_dir() else editable_frontend
     if frontend_dist.is_dir():
         app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
     else:

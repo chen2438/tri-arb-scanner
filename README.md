@@ -32,6 +32,14 @@ tri-arb doctor
 tri-arb serve
 ```
 
+发布 wheel 会通过 Hatchling 构建钩子按锁文件安装前端依赖、执行生产构建，并把页面资源放入 Python
+包；因此从源码构建 wheel 同样要求 Node.js 和 pnpm：
+
+```bash
+python -m pip wheel . --no-deps --wheel-dir wheelhouse
+python scripts/check_wheel_contents.py wheelhouse/*.whl
+```
+
 浏览器访问 [http://127.0.0.1:8000](http://127.0.0.1:8000)。开发前端时可另行执行
 `pnpm --dir frontend dev`，Vite 只监听 127.0.0.1 并代理本地后端 API。
 
