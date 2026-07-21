@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from tri_arb.config import Settings
 from tri_arb.exchange.mexc import MexcRestClient, decode_depth_frame, depth_channel
 from tri_arb.exchange.mexc.proto.PushDataV3ApiWrapper_pb2 import PushDataV3ApiWrapper
+from tri_arb.exchange.okx import OkxRestClient
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,8 +75,9 @@ async def run_diagnostics(
     settings: Settings,
     *,
     rest_client: MexcRestClient | None = None,
+    okx_rest_client: OkxRestClient | None = None,
 ) -> tuple[Diagnostic, ...]:
-    """Run all checks without accessing private MEXC APIs or changing scanner records."""
+    """Run checks without accessing private exchange APIs or changing scanner records."""
 
     results = [Diagnostic("configuration", True, f"bind {settings.host}:{settings.port}")]
     await _capture(
@@ -114,4 +116,37 @@ async def run_diagnostics(
     finally:
         if owns_client:
             await client.aclose()
+
+    if settings.okx_enabled:
+        okx_client = okx_rest_client or OkxRestClient(
+            settings.okx_rest_url,
+            taker_commission=settings.okx_taker_commission,
+        )
+        owns_okx_client = okx_rest_client is None
+        try:
+            await _capture(
+                results,
+                "okx time",
+                okx_client.calibrate_clock,
+                lambda clock: (
+                    f"offset {clock.offset_ms} ms; round trip {clock.round_trip_ms} ms"
+                ),
+            )
+            await _capture(
+                results,
+                "okx instruments",
+                okx_client.instruments,
+                lambda info: f"{len(info.markets)} markets; {len(info.rejections)} rejected",
+            )
+            await _capture(
+                results,
+                "okx tickers",
+                okx_client.tickers,
+                lambda tickers: (
+                    f"{len(tickers.tickers)} tickers; {len(tickers.rejections)} rejected"
+                ),
+            )
+        finally:
+            if owns_okx_client:
+                await okx_client.aclose()
     return tuple(results)

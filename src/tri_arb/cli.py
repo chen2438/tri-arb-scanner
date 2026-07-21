@@ -17,7 +17,7 @@ from tri_arb.observability import configure_logging
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tri-arb",
-        description="MEXC triangular arbitrage scanner",
+        description="MEXC and OKX triangular arbitrage scanner",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("doctor", help="validate local configuration")

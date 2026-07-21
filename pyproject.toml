@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "tri-arb-scanner"
 version = "0.1.0"
-description = "Local-first, auditable triangular arbitrage scanner for MEXC spot markets"
+description = "Local-first, auditable triangular arbitrage scanner for MEXC and OKX spot markets"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-only" }

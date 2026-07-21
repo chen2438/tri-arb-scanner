@@ -5,11 +5,12 @@ from tri_arb.cli import main
 from tri_arb.config import Settings
 from tri_arb.doctor import Diagnostic, run_diagnostics
 from tri_arb.exchange.mexc import MexcRestClient
+from tri_arb.exchange.okx import OkxRestClient
 
 
 @pytest.mark.asyncio
 async def test_doctor_checks_database_protobuf_and_all_public_rest_endpoints() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
+    def mexc_handler(request: httpx.Request) -> httpx.Response:
         payloads = {
             "/api/v3/ping": {},
             "/api/v3/time": {"serverTime": 1_100},
@@ -18,20 +19,43 @@ async def test_doctor_checks_database_protobuf_and_all_public_rest_endpoints() -
         }
         return httpx.Response(200, json=payloads[request.url.path])
 
+    def okx_handler(request: httpx.Request) -> httpx.Response:
+        payloads = {
+            "/api/v5/public/time": [{"ts": "1100"}],
+            "/api/v5/public/instruments": [],
+            "/api/v5/market/tickers": [],
+        }
+        return httpx.Response(
+            200,
+            json={"code": "0", "msg": "", "data": payloads[request.url.path]},
+        )
+
     times = iter([1_000, 1_020, 1_030])
     async with httpx.AsyncClient(
         base_url="https://api.mexc.test",
-        transport=httpx.MockTransport(handler),
-    ) as http_client:
+        transport=httpx.MockTransport(mexc_handler),
+    ) as http_client, httpx.AsyncClient(
+        base_url="https://www.okx.test",
+        transport=httpx.MockTransport(okx_handler),
+    ) as okx_http_client:
         rest_client = MexcRestClient(
             "https://unused.test",
             client=http_client,
             retry_delays=(),
             now_ms=lambda: next(times),
         )
+        okx_times = iter([1_000, 1_020, 1_030])
+        okx_rest_client = OkxRestClient(
+            "https://unused.test",
+            taker_commission=Settings(_env_file=None).okx_taker_commission,
+            client=okx_http_client,
+            retry_delays=(),
+            now_ms=lambda: next(okx_times),
+        )
         results = await run_diagnostics(
             Settings(database_url="sqlite+aiosqlite:///:memory:", _env_file=None),
             rest_client=rest_client,
+            okx_rest_client=okx_rest_client,
         )
 
     assert [result.name for result in results] == [
@@ -42,6 +66,9 @@ async def test_doctor_checks_database_protobuf_and_all_public_rest_endpoints() -
         "mexc time",
         "mexc exchangeInfo",
         "mexc bookTicker",
+        "okx time",
+        "okx instruments",
+        "okx tickers",
     ]
     assert all(result.ok for result in results)
 
