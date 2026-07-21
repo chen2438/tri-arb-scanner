@@ -21,11 +21,13 @@ from tri_arb.exchange.binance.rest import (
     NormalizedBinanceTickers,
     normalize_tickers,
 )
+from tri_arb.exchange.binance.websocket import BinanceDepthWebSocketShard
 
 __all__ = [
     "BinanceDepthError",
     "BinanceDepthEvent",
     "BinanceDepthSnapshot",
+    "BinanceDepthWebSocketShard",
     "BinanceMetadataError",
     "BinanceMetadataRejection",
     "BinanceOrderBookState",
