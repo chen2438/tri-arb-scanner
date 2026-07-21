@@ -9,6 +9,10 @@ from typing import Any
 
 from tri_arb.domain.models import ConversionSide, MarketRules
 
+MAX_MARKETS = 10_000
+MAX_IDENTITY_LENGTH = 64
+MAX_DECIMAL_LENGTH = 128
+
 
 class MexcMetadataError(ValueError):
     """Raised when the exchangeInfo envelope is structurally unusable."""
@@ -27,18 +31,29 @@ class NormalizedExchangeInfo:
 
 
 def _decimal(raw: Mapping[str, Any], field: str) -> Decimal:
+    raw_value = raw.get(field)
+    if (
+        isinstance(raw_value, bool)
+        or not isinstance(raw_value, (str, int))
+        or len(str(raw_value)) > MAX_DECIMAL_LENGTH
+    ):
+        raise MexcMetadataError(f"invalid {field}")
     try:
-        value = Decimal(str(raw[field]))
-    except (KeyError, InvalidOperation, ValueError) as error:
+        value = Decimal(str(raw_value))
+    except (InvalidOperation, ValueError) as error:
         raise MexcMetadataError(f"invalid {field}") from error
-    if not value.is_finite():
+    if not value.is_finite() or (value and abs(value.adjusted()) > 60):
         raise MexcMetadataError(f"invalid {field}")
     return value
 
 
 def _integer(raw: Mapping[str, Any], field: str) -> int:
     value = raw.get(field)
-    if isinstance(value, bool):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (str, int))
+        or len(str(value)) > MAX_DECIMAL_LENGTH
+    ):
         raise MexcMetadataError(f"invalid {field}")
     try:
         number = Decimal(str(value))
@@ -51,7 +66,12 @@ def _integer(raw: Mapping[str, Any], field: str) -> int:
 
 def _identity(raw: Mapping[str, Any], field: str) -> str:
     value = raw.get(field)
-    if not isinstance(value, str) or not value or value != value.strip() or value != value.upper():
+    if (
+        not isinstance(value, str)
+        or not 1 <= len(value) <= MAX_IDENTITY_LENGTH
+        or value != value.strip()
+        or value != value.upper()
+    ):
         raise MexcMetadataError(f"invalid {field}")
     return value
 
@@ -123,6 +143,8 @@ def normalize_exchange_info(payload: Mapping[str, Any]) -> NormalizedExchangeInf
     symbols = payload.get("symbols")
     if not isinstance(symbols, list):
         raise MexcMetadataError("exchangeInfo symbols must be a list")
+    if len(symbols) > MAX_MARKETS:
+        raise MexcMetadataError("exchangeInfo exceeds the market limit")
     markets: list[MarketRules] = []
     rejections: list[MarketMetadataRejection] = []
     seen: set[str] = set()
@@ -130,15 +152,15 @@ def normalize_exchange_info(payload: Mapping[str, Any]) -> NormalizedExchangeInf
         if not isinstance(raw, Mapping):
             raise MexcMetadataError(f"symbol at index {index} must be an object")
         raw_symbol = raw.get("symbol")
-        if isinstance(raw_symbol, str):
+        if isinstance(raw_symbol, str) and len(raw_symbol) <= MAX_IDENTITY_LENGTH:
             if raw_symbol in seen:
                 raise MexcMetadataError(f"duplicate symbol: {raw_symbol}")
             seen.add(raw_symbol)
         try:
             market = _normalize_symbol(raw)
         except MexcMetadataError as error:
-            symbol = raw.get("symbol", f"index {index}")
-            rejections.append(MarketMetadataRejection(str(symbol), str(error)))
+            symbol = str(raw.get("symbol", f"index {index}"))[:MAX_IDENTITY_LENGTH]
+            rejections.append(MarketMetadataRejection(symbol, str(error)))
             continue
         if market is None:
             continue

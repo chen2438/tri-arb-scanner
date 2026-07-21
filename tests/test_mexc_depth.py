@@ -47,6 +47,22 @@ def test_rejects_incomplete_or_mismatched_depth_frames(mutation: str) -> None:
         decode_depth_frame(wrapper.SerializeToString(), received_time_ms=1)
 
 
+@pytest.mark.parametrize("field", ["symbol", "price", "quantity", "version", "magnitude"])
+def test_rejects_oversized_depth_text_fields(field: str) -> None:
+    wrapper = PushDataV3ApiWrapper.FromString(_frame())
+    if field == "symbol":
+        wrapper.symbol = "S" * 65
+    elif field == "version":
+        wrapper.publicLimitDepths.version = "1" * 65
+    elif field in {"price", "quantity"}:
+        setattr(wrapper.publicLimitDepths.bids[0], field, "1" * 129)
+    else:
+        wrapper.publicLimitDepths.bids[0].price = "1e999"
+
+    with pytest.raises(MexcDepthDecodeError):
+        decode_depth_frame(wrapper.SerializeToString(), received_time_ms=1)
+
+
 def _book(symbol: str, source_time_ms: int) -> OrderBook:
     return OrderBook(
         symbol=symbol,

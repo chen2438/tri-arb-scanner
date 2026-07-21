@@ -62,6 +62,20 @@ def test_rejects_structurally_unsafe_book_ticker_responses(payload) -> None:
         normalize_book_tickers(payload, received_time_ms=1)
 
 
+def test_bounds_book_ticker_identity_and_decimal_text() -> None:
+    result = normalize_book_tickers(
+        [
+            _ticker(symbol="S" * 65),
+            _ticker(symbol="ETHUSDT", bidPrice="1" * 129),
+            _ticker(symbol="SOLUSDT", bidPrice="1e999"),
+        ],
+        received_time_ms=1,
+    )
+    assert result.tickers == ()
+    assert len(result.rejections) == 3
+    assert all(len(rejection.symbol) <= 64 for rejection in result.rejections)
+
+
 @pytest.mark.asyncio
 async def test_calls_public_endpoints_and_calibrates_clock_at_request_midpoint() -> None:
     paths = []

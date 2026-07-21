@@ -14,6 +14,9 @@ from tri_arb.exchange.mexc.proto.PushDataV3ApiWrapper_pb2 import PushDataV3ApiWr
 
 DEPTH_LEVELS = 20
 DEPTH_EVENT_TYPE = "spot@public.limit.depth.v3.api.pb"
+MAX_SYMBOL_LENGTH = 64
+MAX_DECIMAL_LENGTH = 128
+MAX_VERSION_LENGTH = 64
 
 
 class MexcDepthDecodeError(ValueError):
@@ -38,7 +41,11 @@ class DepthTimingError(ValueError):
 
 
 def depth_channel(symbol: str) -> str:
-    if not symbol or symbol != symbol.strip() or symbol != symbol.upper():
+    if (
+        not 1 <= len(symbol) <= MAX_SYMBOL_LENGTH
+        or symbol != symbol.strip()
+        or symbol != symbol.upper()
+    ):
         raise ValueError("invalid depth symbol")
     return f"{DEPTH_EVENT_TYPE}@{symbol}@{DEPTH_LEVELS}"
 
@@ -49,10 +56,17 @@ def _levels(items: object, *, side: str) -> tuple[BookLevel, ...]:
         raise MexcDepthDecodeError(f"{side} depth must contain 1 to {DEPTH_LEVELS} levels")
     levels: list[BookLevel] = []
     for item in raw_items:
+        if (
+            len(item.price) > MAX_DECIMAL_LENGTH
+            or len(item.quantity) > MAX_DECIMAL_LENGTH
+        ):
+            raise MexcDepthDecodeError(f"invalid {side} depth level")
         try:
             level = BookLevel(price=Decimal(item.price), quantity=Decimal(item.quantity))
         except (InvalidOperation, ValueError) as error:
             raise MexcDepthDecodeError(f"invalid {side} depth level") from error
+        if abs(level.price.adjusted()) > 60 or abs(level.quantity.adjusted()) > 60:
+            raise MexcDepthDecodeError(f"invalid {side} depth level")
         levels.append(level)
     return tuple(levels)
 
@@ -72,13 +86,18 @@ def decode_depth_frame(frame: bytes, *, received_time_ms: int) -> OrderBook:
     if not wrapper.HasField("symbol") or not wrapper.HasField("sendTime"):
         raise MexcDepthDecodeError("depth frame is missing symbol or sendTime")
     symbol = wrapper.symbol
-    if wrapper.channel != depth_channel(symbol):
+    try:
+        expected_channel = depth_channel(symbol)
+    except ValueError as error:
+        raise MexcDepthDecodeError("invalid depth symbol") from error
+    if wrapper.channel != expected_channel:
         raise MexcDepthDecodeError("depth channel does not match symbol and level")
     if wrapper.sendTime <= 0:
         raise MexcDepthDecodeError("invalid depth sendTime")
     depth = wrapper.publicLimitDepths
     if (
         depth.eventType != DEPTH_EVENT_TYPE
+        or not 1 <= len(depth.version) <= MAX_VERSION_LENGTH
         or not depth.version.isdecimal()
         or int(depth.version) <= 0
     ):

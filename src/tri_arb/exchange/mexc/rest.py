@@ -19,6 +19,8 @@ from tri_arb.exchange.mexc.metadata import NormalizedExchangeInfo, normalize_exc
 
 MAX_RESPONSE_BYTES = 25 * 1024 * 1024
 MAX_BOOK_TICKERS = 10_000
+MAX_SYMBOL_LENGTH = 64
+MAX_DECIMAL_LENGTH = 128
 DEFAULT_RETRY_DELAYS = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
 
 
@@ -62,18 +64,30 @@ def _now_ms() -> int:
 
 
 def _positive_decimal(raw: Mapping[str, Any], field: str) -> Decimal:
+    raw_value = raw.get(field)
+    if (
+        isinstance(raw_value, bool)
+        or not isinstance(raw_value, (str, int))
+        or len(str(raw_value)) > MAX_DECIMAL_LENGTH
+    ):
+        raise ValueError(f"invalid {field}")
     try:
-        value = Decimal(str(raw[field]))
-    except (KeyError, InvalidOperation, ValueError) as error:
+        value = Decimal(str(raw_value))
+    except (InvalidOperation, ValueError) as error:
         raise ValueError(f"invalid {field}") from error
-    if not value.is_finite() or value <= 0:
+    if not value.is_finite() or value <= 0 or abs(value.adjusted()) > 60:
         raise ValueError(f"invalid {field}")
     return value
 
 
 def _symbol(raw: Mapping[str, Any]) -> str:
     value = raw.get("symbol")
-    if not isinstance(value, str) or not value or value != value.strip() or value != value.upper():
+    if (
+        not isinstance(value, str)
+        or not 1 <= len(value) <= MAX_SYMBOL_LENGTH
+        or value != value.strip()
+        or value != value.upper()
+    ):
         raise ValueError("invalid symbol")
     return value
 
@@ -93,7 +107,7 @@ def normalize_book_tickers(payload: Any, *, received_time_ms: int) -> Normalized
         if not isinstance(raw, Mapping):
             raise MexcRestProtocolError(f"bookTicker at index {index} must be an object")
         raw_symbol = raw.get("symbol")
-        if isinstance(raw_symbol, str):
+        if isinstance(raw_symbol, str) and len(raw_symbol) <= MAX_SYMBOL_LENGTH:
             if raw_symbol in seen:
                 raise MexcRestProtocolError(f"duplicate bookTicker symbol: {raw_symbol}")
             seen.add(raw_symbol)
@@ -107,7 +121,8 @@ def normalize_book_tickers(payload: Any, *, received_time_ms: int) -> Normalized
                 received_time_ms=received_time_ms,
             )
         except ValueError as error:
-            rejections.append(BookTickerRejection(str(raw_symbol or f"index {index}"), str(error)))
+            label = str(raw_symbol or f"index {index}")[:MAX_SYMBOL_LENGTH]
+            rejections.append(BookTickerRejection(label, str(error)))
             continue
         tickers.append(ticker)
     return NormalizedBookTickers(

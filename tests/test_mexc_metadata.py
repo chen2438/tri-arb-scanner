@@ -112,3 +112,20 @@ def test_rejects_unknown_or_invalid_enabled_market_rules(overrides, message: str
 def test_rejects_duplicate_symbols() -> None:
     with pytest.raises(MexcMetadataError, match="duplicate symbol"):
         normalize_exchange_info({"symbols": [_symbol(), _symbol()]})
+
+
+def test_bounds_exchange_info_count_identity_and_decimal_text() -> None:
+    with pytest.raises(MexcMetadataError, match="market limit"):
+        normalize_exchange_info({"symbols": [{}] * 10_001})
+
+    result = normalize_exchange_info(
+        {
+            "symbols": [
+                _symbol(symbol="S" * 65),
+                _symbol(takerCommission="1" * 129),
+                _symbol(symbol="ETHUSDT", maxQuoteAmount="1e999"),
+            ]
+        }
+    )
+    assert len(result.rejections) == 3
+    assert all(len(rejection.symbol) <= 64 for rejection in result.rejections)
