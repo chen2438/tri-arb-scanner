@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from tri_arb.config import Settings
+from tri_arb.exchange.binance import BinanceRestClient
 from tri_arb.exchange.mexc import MexcRestClient, decode_depth_frame, depth_channel
 from tri_arb.exchange.mexc.proto.PushDataV3ApiWrapper_pb2 import PushDataV3ApiWrapper
 from tri_arb.exchange.okx import OkxRestClient
@@ -76,6 +77,7 @@ async def run_diagnostics(
     *,
     rest_client: MexcRestClient | None = None,
     okx_rest_client: OkxRestClient | None = None,
+    binance_rest_client: BinanceRestClient | None = None,
 ) -> tuple[Diagnostic, ...]:
     """Run checks without accessing private exchange APIs or changing scanner records."""
 
@@ -149,4 +151,36 @@ async def run_diagnostics(
         finally:
             if owns_okx_client:
                 await okx_client.aclose()
+    if settings.binance_enabled:
+        binance_client = binance_rest_client or BinanceRestClient(
+            settings.binance_rest_url,
+            taker_commission=settings.binance_taker_commission,
+        )
+        owns_binance_client = binance_rest_client is None
+        try:
+            await _capture(
+                results,
+                "binance time",
+                binance_client.calibrate_clock,
+                lambda clock: (
+                    f"offset {clock.offset_ms} ms; round trip {clock.round_trip_ms} ms"
+                ),
+            )
+            await _capture(
+                results,
+                "binance exchangeInfo",
+                binance_client.exchange_info,
+                lambda info: f"{len(info.markets)} markets; {len(info.rejections)} rejected",
+            )
+            await _capture(
+                results,
+                "binance tickers",
+                binance_client.tickers,
+                lambda tickers: (
+                    f"{len(tickers.tickers)} tickers; {len(tickers.rejections)} rejected"
+                ),
+            )
+        finally:
+            if owns_binance_client:
+                await binance_client.aclose()
     return tuple(results)

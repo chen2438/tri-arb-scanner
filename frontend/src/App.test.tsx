@@ -72,6 +72,7 @@ test("filters opportunities by anchor asset", () => {
 test("shows exchange identity and filters opportunities by venue", () => {
   render(<App />);
   expect(screen.getAllByText("MEXC").length).toBeGreaterThan(0);
+  expect(screen.getByRole("option", { name: "BINANCE" })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("交易所"), { target: { value: "OKX" } });
   expect(screen.getByText("正在等待符合门槛的机会")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("交易所"), { target: { value: "MEXC" } });
