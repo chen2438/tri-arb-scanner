@@ -77,3 +77,46 @@ async def test_connects_subscribes_and_delivers_recorded_binary_depth() -> None:
     assert updates[0].subscription_generation == 1
     assert WebSocketState.CONNECTED in {status.state for status in statuses}
     assert statuses[-1].state is WebSocketState.STOPPED
+
+
+@pytest.mark.asyncio
+async def test_publishes_connected_status_after_dynamic_subscription_change() -> None:
+    stop = asyncio.Event()
+    initially_connected = asyncio.Event()
+    updated = asyncio.Event()
+    statuses = []
+
+    async def handler(websocket) -> None:
+        while not stop.is_set():
+            await websocket.recv()
+            await websocket.send('{"id":0,"code":0,"msg":"updated"}')
+
+    async def on_depth(_update: DepthUpdate) -> None:
+        return None
+
+    async def on_status(status) -> None:
+        statuses.append(status)
+        if status.state is WebSocketState.CONNECTED:
+            if status.subscriptions == ("BTCUSDT",):
+                initially_connected.set()
+            elif status.subscriptions == ("BTCUSDT", "ETHUSDT"):
+                updated.set()
+                stop.set()
+
+    async with serve(handler, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        shard = MexcDepthWebSocketShard(
+            f"ws://127.0.0.1:{port}",
+            0,
+            on_depth,
+            on_status=on_status,
+        )
+        shard.set_symbols(("BTCUSDT",))
+        task = asyncio.create_task(shard.run(stop))
+        await asyncio.wait_for(initially_connected.wait(), timeout=3)
+        shard.set_symbols(("BTCUSDT", "ETHUSDT"))
+        await asyncio.wait_for(updated.wait(), timeout=3)
+        await asyncio.wait_for(task, timeout=3)
+
+    connected = [status for status in statuses if status.state is WebSocketState.CONNECTED]
+    assert connected[-1].subscriptions == ("BTCUSDT", "ETHUSDT")

@@ -138,7 +138,7 @@ class MexcDepthWebSocketShard:
             )
         )
 
-    async def _sync(self, websocket: Any, active: set[str]) -> None:
+    async def _sync(self, websocket: Any, active: set[str]) -> bool:
         target = set(self._targets)
         removed = active - target
         added = target - active
@@ -152,6 +152,7 @@ class MexcDepthWebSocketShard:
                     self._subscription_generations.get(symbol, 0) + 1
                 )
             active.update(added)
+        return bool(removed or added)
 
     async def _session(self, stop: asyncio.Event) -> None:
         self._connection_generation += 1
@@ -168,7 +169,8 @@ class MexcDepthWebSocketShard:
             await self._status(WebSocketState.CONNECTED)
             connected_at = last_ping = self._monotonic()
             while not stop.is_set() and self._targets:
-                await self._sync(websocket, active)
+                if await self._sync(websocket, active):
+                    await self._status(WebSocketState.CONNECTED)
                 now = self._monotonic()
                 if now - connected_at >= ROTATE_AFTER_SECONDS:
                     return
