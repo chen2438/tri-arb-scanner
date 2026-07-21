@@ -13,6 +13,8 @@ export type Leg = {
   book_version: string;
   source_time: string;
   received_time: string;
+  price_reference: string | null;
+  price_protection_limit: string | null;
 };
 
 export type Opportunity = {
@@ -54,12 +56,14 @@ export type ScannerStatus = {
   market_count: number;
   route_count: number;
   ticker_count: number;
+  price_reference_count: number;
   depth_book_count: number;
   subscription_count: number;
   active_opportunity_count: number;
   rest_metadata_age_ms: number | null;
   rest_clock_age_ms: number | null;
   rest_ticker_age_ms: number | null;
+  rest_price_reference_age_ms: number | null;
   last_scan_at: string | null;
   last_error: string | null;
   websocket_connections: WebSocketConnection[];

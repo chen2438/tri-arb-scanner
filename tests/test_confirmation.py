@@ -1,6 +1,8 @@
+from dataclasses import replace
 from decimal import Decimal
 
 from tests.test_simulation import _route_and_books
+from tri_arb.domain.models import PriceProtection, PriceReference
 from tri_arb.exchange.mexc import (
     DepthUpdate,
     MarketLease,
@@ -107,3 +109,42 @@ def test_rejects_stale_or_skewed_depth_before_simulation() -> None:
 
     assert stale.reject_reasons == ("stale_depth",)
     assert skewed.reject_reasons == ("leg_skew",)
+
+
+def test_fails_closed_for_missing_or_stale_protection_reference() -> None:
+    candidate, updates, plan, statuses = _inputs()
+    first = candidate.route.edges[0]
+    protected_market = replace(
+        first.market,
+        price_protection=PriceProtection(Decimal("0.2"), Decimal("0.2")),
+    )
+    protected_edge = replace(first, market=protected_market)
+    route = replace(candidate.route, edges=(protected_edge, *candidate.route.edges[1:]))
+    candidate = replace(candidate, route=route)
+
+    missing = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        local_time_ms=1_000_100,
+        safety_buffer_bps=Decimal("5"),
+    )
+    stale = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        local_time_ms=1_000_100,
+        price_references={
+            protected_market.symbol: PriceReference(
+                protected_market.symbol, Decimal("9000"), 5, 900_000
+            )
+        },
+        safety_buffer_bps=Decimal("5"),
+    )
+
+    assert missing.reject_reasons == ("missing_price_reference",)
+    assert stale.reject_reasons == ("stale_price_reference",)

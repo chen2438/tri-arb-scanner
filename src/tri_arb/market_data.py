@@ -11,7 +11,13 @@ from enum import StrEnum
 
 from tri_arb.config import Settings
 from tri_arb.domain.graph import build_market_graph, enumerate_triangular_routes
-from tri_arb.domain.models import BookTicker, MarketRules, OrderBook, TriangularRoute
+from tri_arb.domain.models import (
+    BookTicker,
+    MarketRules,
+    OrderBook,
+    PriceReference,
+    TriangularRoute,
+)
 from tri_arb.exchange.mexc import (
     DepthUpdate,
     MexcDepthWebSocketShard,
@@ -29,6 +35,7 @@ from tri_arb.observability import get_logger, log_event
 METADATA_INTERVAL_SECONDS = 300.0
 CLOCK_INTERVAL_SECONDS = 60.0
 SUBSCRIPTION_INTERVAL_SECONDS = 5.0
+PRICE_REFERENCE_INTERVAL_SECONDS = 10.0
 LOGGER = get_logger(__name__)
 
 
@@ -45,6 +52,7 @@ class MarketDataStatus:
     market_count: int
     route_count: int
     ticker_count: int
+    price_reference_count: int
     depth_book_count: int
     subscription_count: int
     metadata_rejection_count: int
@@ -52,6 +60,7 @@ class MarketDataStatus:
     last_metadata_ms: int | None
     last_clock_ms: int | None
     last_ticker_ms: int | None
+    last_price_reference_ms: int | None
     last_error: str | None
     websocket_statuses: tuple[WebSocketStatus, ...]
 
@@ -66,6 +75,7 @@ class MarketDataSnapshot:
     markets: tuple[MarketRules, ...]
     routes: tuple[TriangularRoute, ...]
     tickers: Mapping[str, BookTicker]
+    price_references: Mapping[str, PriceReference]
     depth_books: Mapping[str, OrderBook]
     depth_updates: Mapping[str, DepthUpdate]
     clock: ServerClock | None
@@ -95,6 +105,7 @@ class MarketDataService:
         self._routes: tuple[TriangularRoute, ...] = ()
         self._ranked_routes: tuple[TriangularRoute, ...] = ()
         self._tickers: dict[str, BookTicker] = {}
+        self._price_references: dict[str, PriceReference] = {}
         self._depth_updates: dict[str, DepthUpdate] = {}
         self._clock: ServerClock | None = None
         self._plan = _empty_plan()
@@ -103,6 +114,7 @@ class MarketDataService:
         self._last_metadata_ms: int | None = None
         self._last_clock_ms: int | None = None
         self._last_ticker_ms: int | None = None
+        self._last_price_reference_ms: int | None = None
         self._errors: dict[str, str] = {}
         self._stopped = False
         self._websocket_statuses: dict[int, WebSocketStatus] = {}
@@ -154,6 +166,11 @@ class MarketDataService:
                 for symbol, update in self._depth_updates.items()
                 if symbol in valid_symbols
             }
+            self._price_references = {
+                symbol: reference
+                for symbol, reference in self._price_references.items()
+                if symbol in valid_symbols
+            }
             self._metadata_rejections = len(result.rejections)
             self._last_metadata_ms = self._now_ms()
         log_event(
@@ -188,6 +205,22 @@ class MarketDataService:
             valid = {route.route_id for route in self._routes}
             self._ranked_routes = tuple(route for route in routes if route.route_id in valid)
 
+    async def refresh_price_references(self) -> tuple[PriceReference, ...]:
+        async with self._lock:
+            symbols = tuple(sorted(self._plan.symbols))
+        references: list[PriceReference] = []
+        for symbol in symbols:
+            references.append(await self._rest.average_price(symbol))
+        async with self._lock:
+            current_symbols = set(self._plan.symbols)
+            self._price_references = {
+                reference.symbol: reference
+                for reference in references
+                if reference.symbol in current_symbols
+            }
+            self._last_price_reference_ms = self._now_ms() if references else None
+        return tuple(references)
+
     async def reconcile_depth(self) -> SubscriptionPlan:
         async with self._lock:
             plan = reconcile_subscriptions(
@@ -206,6 +239,11 @@ class MarketDataService:
                 symbol: update
                 for symbol, update in self._depth_updates.items()
                 if previous_shards.get(symbol) == next_shards.get(symbol)
+            }
+            self._price_references = {
+                symbol: reference
+                for symbol, reference in self._price_references.items()
+                if symbol in next_shards
             }
             self._plan = plan
             for index, shard in enumerate(plan.shards):
@@ -282,6 +320,7 @@ class MarketDataService:
                 market_count=len(self._markets),
                 route_count=len(self._routes),
                 ticker_count=len(self._tickers),
+                price_reference_count=len(self._price_references),
                 depth_book_count=len(self._depth_updates),
                 subscription_count=len(self._plan.leases),
                 metadata_rejection_count=self._metadata_rejections,
@@ -289,6 +328,7 @@ class MarketDataService:
                 last_metadata_ms=self._last_metadata_ms,
                 last_clock_ms=self._last_clock_ms,
                 last_ticker_ms=self._last_ticker_ms,
+                last_price_reference_ms=self._last_price_reference_ms,
                 last_error="; ".join(
                     f"{component}={self._errors[component]}" for component in sorted(self._errors)
                 )
@@ -302,6 +342,7 @@ class MarketDataService:
                 markets=self._markets,
                 routes=self._routes,
                 tickers=dict(self._tickers),
+                price_references=dict(self._price_references),
                 depth_books={symbol: update.book for symbol, update in self._depth_updates.items()},
                 depth_updates=dict(self._depth_updates),
                 clock=self._clock,
@@ -352,6 +393,14 @@ class MarketDataService:
                         "subscriptions",
                         self.reconcile_depth,
                         SUBSCRIPTION_INTERVAL_SECONDS,
+                        stop,
+                    )
+                )
+                tasks.create_task(
+                    self._periodic(
+                        "price_reference",
+                        self.refresh_price_references,
+                        PRICE_REFERENCE_INTERVAL_SECONDS,
                         stop,
                     )
                 )

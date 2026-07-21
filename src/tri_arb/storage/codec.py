@@ -13,6 +13,7 @@ from tri_arb.domain.models import (
     ConversionSide,
     MarketRules,
     OrderBook,
+    PriceProtection,
     RouteSimulation,
     SimulationOutcome,
     TriangularRoute,
@@ -34,6 +35,14 @@ def _market(market: MarketRules) -> dict[str, Any]:
         "max_quote_amount": str(market.max_quote_amount),
         "taker_commission": str(market.taker_commission),
         "allowed_sides": sorted(side.value for side in market.allowed_sides),
+        "price_protection": (
+            {
+                "max_buy_deviation": str(market.price_protection.max_buy_deviation),
+                "max_sell_deviation": str(market.price_protection.max_sell_deviation),
+            }
+            if market.price_protection is not None
+            else None
+        ),
     }
 
 
@@ -92,6 +101,14 @@ def _simulation(simulation: RouteSimulation) -> dict[str, Any]:
                 "book_version": leg.book_version,
                 "source_time_ms": leg.source_time_ms,
                 "received_time_ms": leg.received_time_ms,
+                "price_reference": (
+                    str(leg.price_reference) if leg.price_reference is not None else None
+                ),
+                "price_protection_limit": (
+                    str(leg.price_protection_limit)
+                    if leg.price_protection_limit is not None
+                    else None
+                ),
             }
             for leg in simulation.legs
         ],
@@ -134,6 +151,7 @@ def serialize_lifecycle(lifecycle: OpportunityLifecycle) -> str:
 
 
 def _decode_market(payload: dict[str, Any]) -> MarketRules:
+    protection = payload.get("price_protection")
     return MarketRules(
         symbol=payload["symbol"],
         base_asset=payload["base_asset"],
@@ -144,6 +162,14 @@ def _decode_market(payload: dict[str, Any]) -> MarketRules:
         max_quote_amount=Decimal(payload["max_quote_amount"]),
         taker_commission=Decimal(payload["taker_commission"]),
         allowed_sides=frozenset(ConversionSide(side) for side in payload["allowed_sides"]),
+        price_protection=(
+            PriceProtection(
+                Decimal(protection["max_buy_deviation"]),
+                Decimal(protection["max_sell_deviation"]),
+            )
+            if protection is not None
+            else None
+        ),
     )
 
 
@@ -205,6 +231,11 @@ def replay_audit_snapshot(snapshot_json: str) -> ReplayResult:
             {book.symbol: book for book in books},
             Decimal(recorded["start_amount"]),
             safety_buffer_bps=Decimal(recorded["safety_buffer_bps"]),
+            reference_prices={
+                leg["symbol"]: Decimal(leg["price_reference"])
+                for leg in recorded["legs"]
+                if leg.get("price_reference") is not None
+            },
         )
     except (KeyError, TypeError, json.JSONDecodeError) as error:
         raise ValueError("invalid audit snapshot") from error

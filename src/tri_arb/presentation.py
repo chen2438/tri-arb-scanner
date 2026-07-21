@@ -45,6 +45,8 @@ def audit_snapshot_to_public(snapshot_json: str) -> dict[str, Any]:
                 "book_version": leg["book_version"],
                 "source_time": utc_iso(leg["source_time_ms"]),
                 "received_time": utc_iso(leg["received_time_ms"]),
+                "price_reference": leg.get("price_reference"),
+                "price_protection_limit": leg.get("price_protection_limit"),
             }
             for leg in simulation["legs"]
         ]

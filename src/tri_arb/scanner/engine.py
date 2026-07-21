@@ -74,6 +74,8 @@ class ScannerEngine:
                     snapshot.status.websocket_statuses,
                     server_time_ms=server_time_ms,
                     safety_buffer_bps=self._settings.safety_buffer_bps,
+                    price_references=snapshot.price_references,
+                    local_time_ms=evaluated_at_ms,
                     max_age_ms=self._settings.max_depth_age_ms,
                     max_leg_skew_ms=self._settings.max_leg_skew_ms,
                 )

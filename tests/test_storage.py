@@ -7,9 +7,9 @@ import aiosqlite
 import pytest
 
 from tests.test_confirmation import _inputs
-from tri_arb.domain.models import BookLevel
+from tri_arb.domain.models import BookLevel, PriceProtection, PriceReference
 from tri_arb.scanner import OpportunityTracker, ScannerCycle, confirm_candidate
-from tri_arb.storage import OpportunityStore, replay_audit_snapshot
+from tri_arb.storage import OpportunityStore, replay_audit_snapshot, serialize_lifecycle
 
 
 def _confirmed(third_leg_bid: str):
@@ -35,6 +35,43 @@ def _confirmed(third_leg_bid: str):
 
 def _cycle(at_ms: int, *outcomes) -> ScannerCycle:
     return ScannerCycle(at_ms, tuple(outcome.candidate for outcome in outcomes), outcomes)
+
+
+def test_replays_price_protection_rules_and_reference_prices() -> None:
+    candidate, updates, plan, statuses = _inputs()
+    first = candidate.route.edges[0]
+    protected = replace(
+        first,
+        market=replace(
+            first.market,
+            price_protection=PriceProtection(Decimal("0.2"), Decimal("0.2")),
+        ),
+    )
+    candidate = replace(
+        candidate,
+        route=replace(candidate.route, edges=(protected, *candidate.route.edges[1:])),
+    )
+    outcome = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        local_time_ms=1_000_100,
+        price_references={
+            protected.market.symbol: PriceReference(
+                protected.market.symbol, Decimal("9000"), 5, 1_000_050
+            )
+        },
+        safety_buffer_bps=Decimal("5"),
+    )
+    assert outcome.accepted
+    tracker = OpportunityTracker(lifecycle_id=lambda: "protected-lifecycle")
+    tracker.apply_cycle(_cycle(1_000, outcome))
+    snapshot = serialize_lifecycle(tracker.active()[0])
+
+    assert '"price_reference":"9000"' in snapshot
+    assert replay_audit_snapshot(snapshot).matches_recorded
 
 
 @pytest.mark.asyncio

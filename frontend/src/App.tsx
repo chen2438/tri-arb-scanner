@@ -16,6 +16,7 @@ const closeReasonLabel: Record<string, string> = {
   below_threshold: "跌破收益门槛",
   connection_lost: "深度连接中断",
   leg_skew: "三腿时间偏差过大",
+  price_protection: "触发交易所价格保护",
   missing_depth: "深度快照不完整",
   stale_market_data: "行情已过期",
   stale_depth: "深度行情已过期",
@@ -80,6 +81,8 @@ function LegDetails({ opportunity }: { opportunity: Opportunity }) {
             <dl>
               <div><dt>方向</dt><dd>{leg.from_asset} → {leg.to_asset}</dd></div>
               <div><dt>平均成交价</dt><dd>{leg.average_price}</dd></div>
+              {leg.price_reference && <div><dt>5 分钟参考价</dt><dd>{leg.price_reference}</dd></div>}
+              {leg.price_protection_limit && <div><dt>{leg.side === "BUY" ? "买入保护上限" : "卖出保护下限"}</dt><dd>{leg.price_protection_limit}</dd></div>}
               <div><dt>输入 / 输出</dt><dd>{leg.input_amount} / {leg.output_amount}</dd></div>
               <div><dt>费率 / 手续费</dt><dd>{leg.fee_rate} / {leg.fee_amount}</dd></div>
               <div><dt>余量</dt><dd>{leg.dust_amount}</dd></div>
@@ -148,6 +151,7 @@ function StatusPanel({ status }: { status: ScannerStatus | null }) {
           <div><dt>市场元数据</dt><dd>{age(status.rest_metadata_age_ms)}</dd></div>
           <div><dt>交易所时钟</dt><dd>{age(status.rest_clock_age_ms)}</dd></div>
           <div><dt>全市场报价</dt><dd>{age(status.rest_ticker_age_ms)}</dd></div>
+          <div><dt>价格保护参考</dt><dd>{age(status.rest_price_reference_age_ms)}</dd></div>
           <div><dt>最近扫描</dt><dd>{formatTime(status.last_scan_at)}</dd></div>
         </dl>
       </section>
@@ -175,6 +179,7 @@ function StatusPanel({ status }: { status: ScannerStatus | null }) {
           <div><strong>{status.market_count}</strong><span>市场</span></div>
           <div><strong>{status.route_count}</strong><span>三角路径</span></div>
           <div><strong>{status.ticker_count}</strong><span>最新报价</span></div>
+          <div><strong>{status.price_reference_count}</strong><span>保护参考价</span></div>
           <div><strong>{status.depth_book_count}</strong><span>深度簿</span></div>
         </div>
         {status.last_error && <p className="error-message">最近错误：{status.last_error}</p>}

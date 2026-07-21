@@ -3,7 +3,14 @@ from decimal import Decimal
 import pytest
 
 from tri_arb.config import Settings
-from tri_arb.domain.models import BookLevel, BookTicker, ConversionSide, MarketRules, OrderBook
+from tri_arb.domain.models import (
+    BookLevel,
+    BookTicker,
+    ConversionSide,
+    MarketRules,
+    OrderBook,
+    PriceReference,
+)
 from tri_arb.exchange.mexc import (
     DepthUpdate,
     NormalizedBookTickers,
@@ -60,6 +67,9 @@ class FakeRestClient:
             (),
         )
 
+    async def average_price(self, symbol: str) -> PriceReference:
+        return PriceReference(symbol, Decimal("1.5"), 5, 20_000)
+
 
 @pytest.mark.asyncio
 async def test_builds_coherent_ready_snapshot_from_public_rest_inputs() -> None:
@@ -100,6 +110,10 @@ async def test_reconciles_ranked_routes_into_complete_depth_subscription_plan() 
     assert len(plan.symbols) == 3
     assert snapshot.status.subscription_count == 3
     assert snapshot.depth_books == {}
+
+    references = await service.refresh_price_references()
+    assert {reference.symbol for reference in references} == set(plan.symbols)
+    assert set((await service.snapshot()).price_references) == set(plan.symbols)
 
 
 @pytest.mark.asyncio

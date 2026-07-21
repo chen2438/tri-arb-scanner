@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
@@ -7,6 +8,7 @@ from tri_arb.domain import (
     ConversionSide,
     MarketRules,
     OrderBook,
+    PriceProtection,
     RejectReason,
     build_market_graph,
     confirmed_capacity,
@@ -25,6 +27,7 @@ def _market(
     min_base: str = "0.00000001",
     min_quote: str = "0.000001",
     max_quote: str = "1000000",
+    protection: str | None = None,
 ) -> MarketRules:
     return MarketRules(
         symbol=symbol,
@@ -36,6 +39,11 @@ def _market(
         max_quote_amount=Decimal(max_quote),
         taker_commission=Decimal(fee),
         allowed_sides=frozenset({ConversionSide.BUY, ConversionSide.SELL}),
+        price_protection=(
+            PriceProtection(Decimal(protection), Decimal(protection))
+            if protection is not None
+            else None
+        ),
     )
 
 
@@ -133,6 +141,86 @@ def test_consumes_multiple_levels_and_records_average_price() -> None:
     assert first.levels_consumed == 2
     assert first.average_price > Decimal("10000")
     assert first.average_price < Decimal("10100")
+
+
+def test_rejects_book_levels_outside_price_protection_and_requires_reference() -> None:
+    route, books = _route_and_books()
+    protected = _market("BTCUSDT", "BTC", "USDT", protection="0.2")
+    route = type(route)(
+        route.route_id,
+        route.assets,
+        (type(route.edges[0])(protected, "USDT", "BTC", ConversionSide.BUY), *route.edges[1:]),
+    )
+
+    missing = simulate_route(route, books, Decimal("100"), safety_buffer_bps=Decimal("0"))
+    blocked = simulate_route(
+        route,
+        books,
+        Decimal("100"),
+        safety_buffer_bps=Decimal("0"),
+        reference_prices={"BTCUSDT": Decimal("8000")},
+    )
+    allowed = simulate_route(
+        route,
+        books,
+        Decimal("100"),
+        safety_buffer_bps=Decimal("0"),
+        reference_prices={"BTCUSDT": Decimal("9000")},
+    )
+
+    assert missing.reject_reasons == (RejectReason.MISSING_PRICE_REFERENCE,)
+    assert blocked.reject_reasons == (RejectReason.PRICE_PROTECTION,)
+    assert allowed.simulation is not None
+    assert allowed.simulation.legs[0].price_protection_limit == Decimal("10800.0")
+
+
+def test_checks_sell_floor_and_stops_capacity_at_protected_depth() -> None:
+    route, books = _route_and_books()
+    last = route.edges[2]
+    protected_last = replace(
+        last,
+        market=replace(
+            last.market,
+            price_protection=PriceProtection(Decimal("0.2"), Decimal("0.2")),
+        ),
+    )
+    sell_route = replace(route, edges=(*route.edges[:2], protected_last))
+
+    blocked = simulate_route(
+        sell_route,
+        books,
+        Decimal("100"),
+        reference_prices={"ETHUSDT": Decimal("700")},
+    )
+    assert blocked.reject_reasons == (RejectReason.PRICE_PROTECTION,)
+
+    first = route.edges[0]
+    buy_route = replace(
+        route,
+        edges=(
+            replace(
+                first,
+                market=replace(
+                    first.market,
+                    price_protection=PriceProtection(Decimal("0.2"), Decimal("0.2")),
+                ),
+            ),
+            *route.edges[1:],
+        ),
+    )
+    books["BTCUSDT"] = _book(
+        "BTCUSDT",
+        bids=(_level("9990"),),
+        asks=(_level("10000", "0.005"), _level("11000", "1")),
+    )
+    capacity = confirmed_capacity(
+        buy_route,
+        books,
+        Decimal("10"),
+        reference_prices={"BTCUSDT": Decimal("9000")},
+    )
+
+    assert Decimal("49.99") <= capacity <= Decimal("50.00")
 
 
 def test_rounds_base_quantity_down_and_records_unspent_dust() -> None:

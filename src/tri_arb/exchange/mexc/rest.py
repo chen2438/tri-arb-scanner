@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from tri_arb.domain.models import BookTicker
+from tri_arb.domain.models import BookTicker, PriceReference
 from tri_arb.exchange.mexc.metadata import NormalizedExchangeInfo, normalize_exchange_info
 
 MAX_RESPONSE_BYTES = 25 * 1024 * 1024
@@ -190,11 +190,11 @@ class MexcRestClient:
         base = self._retry_delays[attempt]
         return min(30.0, base * (0.8 + 0.4 * self._jitter()))
 
-    async def _request_json(self, path: str) -> Any:
+    async def _request_json(self, path: str, *, params: Mapping[str, str] | None = None) -> Any:
         attempt = 0
         while True:
             try:
-                response = await self._client.get(path)
+                response = await self._client.get(path, params=params)
             except (httpx.TimeoutException, httpx.NetworkError) as error:
                 if attempt >= len(self._retry_delays):
                     raise MexcRestError(f"GET {path} failed after retries") from error
@@ -259,3 +259,20 @@ class MexcRestClient:
         async with self._book_ticker_lock:
             payload = await self._request_json("/api/v3/ticker/bookTicker")
             return normalize_book_tickers(payload, received_time_ms=self._now_ms())
+
+    async def average_price(self, symbol: str) -> PriceReference:
+        try:
+            normalized_symbol = _symbol({"symbol": symbol})
+        except ValueError as error:
+            raise MexcRestProtocolError(str(error)) from error
+        payload = await self._request_json("/api/v3/avgPrice", params={"symbol": normalized_symbol})
+        if not isinstance(payload, Mapping):
+            raise MexcRestProtocolError("avgPrice response must be an object")
+        minutes = payload.get("mins")
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 60:
+            raise MexcRestProtocolError("invalid avgPrice mins")
+        try:
+            price = _positive_decimal(payload, "price")
+            return PriceReference(normalized_symbol, price, minutes, self._now_ms())
+        except ValueError as error:
+            raise MexcRestProtocolError(str(error)) from error

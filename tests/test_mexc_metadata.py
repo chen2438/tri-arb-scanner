@@ -33,6 +33,30 @@ def test_normalizes_enabled_market_rules_without_binary_floats() -> None:
     assert market.min_base_quantity == Decimal("0.00001")
     assert market.taker_commission == Decimal("0.0005")
     assert market.allowed_sides == frozenset({ConversionSide.BUY, ConversionSide.SELL})
+    assert market.price_protection is None
+
+
+def test_normalizes_mexc_percent_price_protection() -> None:
+    result = normalize_exchange_info(
+        {
+            "symbols": [
+                _symbol(
+                    filters=[
+                        {
+                            "filterType": "PERCENT_PRICE_BY_SIDE",
+                            "bidMultiplierUp": "0.2",
+                            "askMultiplierDown": "0.1",
+                        }
+                    ]
+                )
+            ]
+        }
+    )
+    (market,) = result.markets
+
+    assert market.price_protection is not None
+    assert market.price_protection.max_buy_deviation == Decimal("0.2")
+    assert market.price_protection.max_sell_deviation == Decimal("0.1")
 
 
 @pytest.mark.parametrize(
@@ -99,6 +123,19 @@ def test_ignores_known_unavailable_markets(overrides) -> None:
         ({"baseAssetPrecision": 31}, "precision must be between"),
         ({"status": True}, "unknown status"),
         ({"symbol": "btcusdt"}, "invalid symbol"),
+        ({"filters": [{"filterType": "UNKNOWN"}]}, "unknown filterType"),
+        (
+            {
+                "filters": [
+                    {
+                        "filterType": "PERCENT_PRICE_BY_SIDE",
+                        "bidMultiplierUp": "1",
+                        "askMultiplierDown": "0.2",
+                    }
+                ]
+            },
+            "deviations",
+        ),
     ],
 )
 def test_rejects_unknown_or_invalid_enabled_market_rules(overrides, message: str) -> None:

@@ -22,7 +22,23 @@ class RejectReason(StrEnum):
     BELOW_MIN_BASE = "below_min_base"
     BELOW_MIN_QUOTE = "below_min_quote"
     ABOVE_MAX_QUOTE = "above_max_quote"
+    MISSING_PRICE_REFERENCE = "missing_price_reference"
+    STALE_PRICE_REFERENCE = "stale_price_reference"
+    PRICE_PROTECTION = "price_protection"
     INVALID_RULE = "invalid_rule"
+
+
+@dataclass(frozen=True, slots=True)
+class PriceProtection:
+    """Exchange-neutral maximum deviation from a public reference price."""
+
+    max_buy_deviation: Decimal
+    max_sell_deviation: Decimal
+
+    def __post_init__(self) -> None:
+        values = (self.max_buy_deviation, self.max_sell_deviation)
+        if not all(value.is_finite() and ZERO <= value < Decimal("1") for value in values):
+            raise ValueError("price protection deviations must be in [0, 1)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +52,7 @@ class MarketRules:
     max_quote_amount: Decimal
     taker_commission: Decimal
     allowed_sides: frozenset[ConversionSide]
+    price_protection: PriceProtection | None = None
 
     def __post_init__(self) -> None:
         if not self.symbol or not self.base_asset or not self.quote_asset:
@@ -66,6 +83,28 @@ class MarketRules:
     @property
     def base_quantum(self) -> Decimal:
         return Decimal(1).scaleb(-self.base_asset_precision)
+
+
+@dataclass(frozen=True, slots=True)
+class PriceReference:
+    symbol: str
+    price: Decimal
+    window_minutes: int
+    received_time_ms: int
+
+    def __post_init__(self) -> None:
+        if (
+            not self.symbol
+            or self.symbol != self.symbol.strip()
+            or self.symbol != self.symbol.upper()
+        ):
+            raise ValueError("invalid price reference symbol")
+        if not self.price.is_finite() or self.price <= ZERO:
+            raise ValueError("price reference must be finite and positive")
+        if not 1 <= self.window_minutes <= 60:
+            raise ValueError("price reference window must be between 1 and 60 minutes")
+        if self.received_time_ms <= 0:
+            raise ValueError("price reference receive time must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +226,8 @@ class LegSimulation:
     book_version: str
     source_time_ms: int
     received_time_ms: int
+    price_reference: Decimal | None = None
+    price_protection_limit: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)

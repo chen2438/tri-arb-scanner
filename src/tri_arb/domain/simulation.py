@@ -79,13 +79,27 @@ def _check_order_rules(edge: ConversionEdge, base_quantity: Decimal, quote_amoun
         raise _Rejected(RejectReason.ABOVE_MAX_QUOTE)
 
 
-def _simulate_buy(edge: ConversionEdge, book: OrderBook, input_amount: Decimal) -> LegSimulation:
+def _simulate_buy(
+    edge: ConversionEdge,
+    book: OrderBook,
+    input_amount: Decimal,
+    reference_price: Decimal | None,
+) -> LegSimulation:
     raw_base = _base_for_quote(input_amount, book.asks)
     base_quantity = _floor(raw_base, edge.market.base_quantum)
     if base_quantity <= ZERO:
         raise _Rejected(RejectReason.BELOW_MIN_BASE)
     quote_spent, levels_consumed = _quote_for_base(base_quantity, book.asks)
     _check_order_rules(edge, base_quantity, quote_spent)
+    protection_limit = None
+    if edge.market.price_protection is not None:
+        if reference_price is None or not reference_price.is_finite() or reference_price <= ZERO:
+            raise _Rejected(RejectReason.MISSING_PRICE_REFERENCE)
+        protection_limit = reference_price * (
+            Decimal(1) + edge.market.price_protection.max_buy_deviation
+        )
+        if book.asks[levels_consumed - 1].price > protection_limit:
+            raise _Rejected(RejectReason.PRICE_PROTECTION)
     fee = base_quantity * edge.market.taker_commission
     output = base_quantity - fee
     return LegSimulation(
@@ -103,15 +117,31 @@ def _simulate_buy(edge: ConversionEdge, book: OrderBook, input_amount: Decimal) 
         book_version=book.version,
         source_time_ms=book.source_time_ms,
         received_time_ms=book.received_time_ms,
+        price_reference=reference_price,
+        price_protection_limit=protection_limit,
     )
 
 
-def _simulate_sell(edge: ConversionEdge, book: OrderBook, input_amount: Decimal) -> LegSimulation:
+def _simulate_sell(
+    edge: ConversionEdge,
+    book: OrderBook,
+    input_amount: Decimal,
+    reference_price: Decimal | None,
+) -> LegSimulation:
     base_quantity = _floor(input_amount, edge.market.base_quantum)
     if base_quantity <= ZERO:
         raise _Rejected(RejectReason.BELOW_MIN_BASE)
     quote_received, levels_consumed = _quote_for_base(base_quantity, book.bids)
     _check_order_rules(edge, base_quantity, quote_received)
+    protection_limit = None
+    if edge.market.price_protection is not None:
+        if reference_price is None or not reference_price.is_finite() or reference_price <= ZERO:
+            raise _Rejected(RejectReason.MISSING_PRICE_REFERENCE)
+        protection_limit = reference_price * (
+            Decimal(1) - edge.market.price_protection.max_sell_deviation
+        )
+        if book.bids[levels_consumed - 1].price < protection_limit:
+            raise _Rejected(RejectReason.PRICE_PROTECTION)
     fee = quote_received * edge.market.taker_commission
     output = quote_received - fee
     return LegSimulation(
@@ -129,6 +159,8 @@ def _simulate_sell(edge: ConversionEdge, book: OrderBook, input_amount: Decimal)
         book_version=book.version,
         source_time_ms=book.source_time_ms,
         received_time_ms=book.received_time_ms,
+        price_reference=reference_price,
+        price_protection_limit=protection_limit,
     )
 
 
@@ -151,6 +183,7 @@ def simulate_route(
     start_amount: Decimal,
     *,
     safety_buffer_bps: Decimal = Decimal("5"),
+    reference_prices: Mapping[str, Decimal] | None = None,
 ) -> SimulationOutcome:
     if not start_amount.is_finite() or start_amount <= ZERO:
         return SimulationOutcome(None, (RejectReason.NON_POSITIVE_INPUT,))
@@ -181,10 +214,11 @@ def simulate_route(
         legs: list[LegSimulation] = []
         for edge in route.edges:
             book = route_books[edge.market.symbol]
+            reference_price = (reference_prices or {}).get(edge.market.symbol)
             leg = (
-                _simulate_buy(edge, book, amount)
+                _simulate_buy(edge, book, amount, reference_price)
                 if edge.side is ConversionSide.BUY
-                else _simulate_sell(edge, book, amount)
+                else _simulate_sell(edge, book, amount, reference_price)
             )
             legs.append(leg)
             amount = leg.output_amount
@@ -216,16 +250,25 @@ def confirmed_capacity(
     books: Mapping[str, OrderBook],
     known_good_amount: Decimal,
     *,
+    reference_prices: Mapping[str, Decimal] | None = None,
     max_doublings: int = 64,
     iterations: int = 32,
 ) -> Decimal:
-    if not simulate_route(route, books, known_good_amount, safety_buffer_bps=ZERO).accepted:
+    if not simulate_route(
+        route,
+        books,
+        known_good_amount,
+        safety_buffer_bps=ZERO,
+        reference_prices=reference_prices,
+    ).accepted:
         raise ValueError("known_good_amount must produce a valid route simulation")
 
     low = known_good_amount
     high = known_good_amount * 2
     for _ in range(max_doublings):
-        if not simulate_route(route, books, high, safety_buffer_bps=ZERO).accepted:
+        if not simulate_route(
+            route, books, high, safety_buffer_bps=ZERO, reference_prices=reference_prices
+        ).accepted:
             break
         low = high
         high *= 2
@@ -234,7 +277,9 @@ def confirmed_capacity(
 
     for _ in range(iterations):
         middle = (low + high) / 2
-        if simulate_route(route, books, middle, safety_buffer_bps=ZERO).accepted:
+        if simulate_route(
+            route, books, middle, safety_buffer_bps=ZERO, reference_prices=reference_prices
+        ).accepted:
             low = middle
         else:
             high = middle

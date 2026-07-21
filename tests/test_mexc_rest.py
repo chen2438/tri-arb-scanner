@@ -87,26 +87,32 @@ async def test_calls_public_endpoints_and_calibrates_clock_at_request_midpoint()
             "/api/v3/time": {"serverTime": 1_100},
             "/api/v3/exchangeInfo": {"symbols": []},
             "/api/v3/ticker/bookTicker": [_ticker()],
+            "/api/v3/avgPrice": {"mins": 5, "price": "100.15"},
         }
         return httpx.Response(200, json=payloads[request.url.path])
 
-    times = iter([1_000, 1_020, 1_030])
+    times = iter([1_000, 1_020, 1_030, 1_040])
     client, http_client = _client(handler, now_ms=lambda: next(times))
     async with http_client:
         await client.ping()
         clock = await client.calibrate_clock()
         exchange_info = await client.exchange_info()
         book_tickers = await client.book_tickers()
+        average_price = await client.average_price("BTCUSDT")
 
     assert clock.offset_ms == 90
     assert clock.round_trip_ms == 20
     assert exchange_info.markets == ()
     assert book_tickers.tickers[0].received_time_ms == 1_030
+    assert average_price.price == Decimal("100.15")
+    assert average_price.window_minutes == 5
+    assert average_price.received_time_ms == 1_040
     assert paths == [
         "/api/v3/ping",
         "/api/v3/time",
         "/api/v3/exchangeInfo",
         "/api/v3/ticker/bookTicker",
+        "/api/v3/avgPrice",
     ]
 
 

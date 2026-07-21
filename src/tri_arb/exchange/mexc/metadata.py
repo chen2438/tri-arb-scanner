@@ -7,11 +7,12 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from tri_arb.domain.models import ConversionSide, MarketRules
+from tri_arb.domain.models import ConversionSide, MarketRules, PriceProtection
 
 MAX_MARKETS = 10_000
 MAX_IDENTITY_LENGTH = 64
 MAX_DECIMAL_LENGTH = 128
+MAX_FILTERS = 32
 
 
 class MexcMetadataError(ValueError):
@@ -109,6 +110,29 @@ def _min_base_quantity(raw: Mapping[str, Any], base_asset_precision: int) -> Dec
     return explicit_minimum
 
 
+def _price_protection(raw: Mapping[str, Any]) -> PriceProtection | None:
+    filters = raw.get("filters", [])
+    if not isinstance(filters, list) or len(filters) > MAX_FILTERS:
+        raise MexcMetadataError("invalid filters")
+    protection: PriceProtection | None = None
+    for item in filters:
+        if not isinstance(item, Mapping):
+            raise MexcMetadataError("invalid filter")
+        filter_type = item.get("filterType")
+        if filter_type != "PERCENT_PRICE_BY_SIDE":
+            raise MexcMetadataError("unknown filterType")
+        if protection is not None:
+            raise MexcMetadataError("duplicate price protection filter")
+        try:
+            protection = PriceProtection(
+                max_buy_deviation=_decimal(item, "bidMultiplierUp"),
+                max_sell_deviation=_decimal(item, "askMultiplierDown"),
+            )
+        except ValueError as error:
+            raise MexcMetadataError(str(error)) from error
+    return protection
+
+
 def _normalize_symbol(raw: Mapping[str, Any]) -> MarketRules | None:
     if not _status(raw):
         return None
@@ -132,6 +156,7 @@ def _normalize_symbol(raw: Mapping[str, Any]) -> MarketRules | None:
             max_quote_amount=_decimal(raw, "maxQuoteAmount"),
             taker_commission=_decimal(raw, "takerCommission"),
             allowed_sides=allowed_sides,
+            price_protection=_price_protection(raw),
         )
     except ValueError as error:
         if isinstance(error, MexcMetadataError):

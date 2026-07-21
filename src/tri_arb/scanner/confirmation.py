@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 
-from tri_arb.domain.models import OrderBook, RouteSimulation
+from tri_arb.domain.models import OrderBook, PriceReference, RouteSimulation
 from tri_arb.domain.simulation import confirmed_capacity, simulate_route
 from tri_arb.exchange.mexc import (
     DepthTiming,
@@ -27,6 +27,8 @@ class ConfirmationRejectReason(StrEnum):
     WRONG_SHARD = "wrong_shard"
     STALE_GENERATION = "stale_generation"
     CAPACITY_UNAVAILABLE = "capacity_unavailable"
+    MISSING_PRICE_REFERENCE = "missing_price_reference"
+    STALE_PRICE_REFERENCE = "stale_price_reference"
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +53,9 @@ def confirm_candidate(
     *,
     server_time_ms: int,
     safety_buffer_bps: Decimal,
+    price_references: Mapping[str, PriceReference] | None = None,
+    local_time_ms: int | None = None,
+    max_price_reference_age_ms: int = 30_000,
     max_age_ms: int = 2_000,
     max_leg_skew_ms: int = 1_000,
 ) -> ConfirmationOutcome:
@@ -82,6 +87,23 @@ def confirm_candidate(
     if reasons:
         return ConfirmationOutcome(candidate, None, None, None, tuple(dict.fromkeys(reasons)))
 
+    reference_prices: dict[str, Decimal] = {}
+    received_now_ms = server_time_ms if local_time_ms is None else local_time_ms
+    for edge in candidate.route.edges:
+        if edge.market.price_protection is None:
+            continue
+        reference = (price_references or {}).get(edge.market.symbol)
+        if reference is None or reference.symbol != edge.market.symbol:
+            reasons.append(ConfirmationRejectReason.MISSING_PRICE_REFERENCE.value)
+            continue
+        age_ms = received_now_ms - reference.received_time_ms
+        if age_ms < 0 or age_ms > max_price_reference_age_ms:
+            reasons.append(ConfirmationRejectReason.STALE_PRICE_REFERENCE.value)
+            continue
+        reference_prices[edge.market.symbol] = reference.price
+    if reasons:
+        return ConfirmationOutcome(candidate, None, None, None, tuple(dict.fromkeys(reasons)))
+
     books = tuple(update.book for update in updates)
     try:
         timing = validate_depth_timing(
@@ -98,6 +120,7 @@ def confirm_candidate(
         books_by_symbol,
         candidate.start_amount,
         safety_buffer_bps=safety_buffer_bps,
+        reference_prices=reference_prices,
     )
     if outcome.simulation is None:
         return ConfirmationOutcome(
@@ -113,6 +136,7 @@ def confirm_candidate(
             candidate.route,
             books_by_symbol,
             candidate.start_amount,
+            reference_prices=reference_prices,
         )
     except ValueError:
         return ConfirmationOutcome(

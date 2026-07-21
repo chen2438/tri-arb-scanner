@@ -28,6 +28,7 @@ class CloseReason(StrEnum):
     CONNECTION_LOST = "connection_lost"
     STALE_DEPTH = "stale_depth"
     LEG_SKEW = "leg_skew"
+    PRICE_PROTECTION = "price_protection"
     SIMULATION_REJECTED = "simulation_rejected"
     PROCESS_RESTART = "process_restart"
 
@@ -77,6 +78,8 @@ def _invalid_close_reason(outcome: ConfirmationOutcome) -> CloseReason:
         return CloseReason.STALE_DEPTH
     if "leg_skew" in reasons:
         return CloseReason.LEG_SKEW
+    if reasons & {"price_protection", "missing_price_reference", "stale_price_reference"}:
+        return CloseReason.PRICE_PROTECTION
     return CloseReason.SIMULATION_REJECTED
 
 
