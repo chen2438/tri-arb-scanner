@@ -14,7 +14,11 @@ from tri_arb.scanner.confirmation import (
     ConfirmationRejectReason,
     confirm_candidate,
 )
-from tri_arb.scanner.screening import BroadCandidate, screen_routes
+from tri_arb.scanner.screening import (
+    BroadCandidate,
+    BroadScreenResult,
+    screen_routes_with_diagnostics,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +26,7 @@ class ScannerCycle:
     evaluated_at_ms: int
     broad_candidates: tuple[BroadCandidate, ...]
     confirmations: tuple[ConfirmationOutcome, ...]
+    broad_screen: BroadScreenResult | None = None
 
     @property
     def confirmed(self) -> tuple[ConfirmationOutcome, ...]:
@@ -47,12 +52,13 @@ class ScannerEngine:
 
     def evaluate(self, snapshot: MarketDataSnapshot) -> ScannerCycle:
         evaluated_at_ms = self._now_ms()
-        broad = screen_routes(
+        broad_screen = screen_routes_with_diagnostics(
             snapshot.routes,
             snapshot.tickers,
             self._settings.notional,
             limit=self._settings.shortlist_routes,
         )
+        broad = broad_screen.candidates
         if snapshot.clock is None:
             confirmations = tuple(
                 ConfirmationOutcome(
@@ -81,7 +87,7 @@ class ScannerEngine:
                 )
                 for candidate in broad
             )
-        return ScannerCycle(evaluated_at_ms, broad, confirmations)
+        return ScannerCycle(evaluated_at_ms, broad, confirmations, broad_screen)
 
     async def cycle(self, market_data: MarketDataService) -> ScannerCycle:
         snapshot = await market_data.snapshot()

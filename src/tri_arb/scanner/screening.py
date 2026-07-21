@@ -20,6 +20,15 @@ class BroadCandidate:
     estimated_return_bps: Decimal
 
 
+@dataclass(frozen=True, slots=True)
+class BroadScreenResult:
+    candidates: tuple[BroadCandidate, ...]
+    total_route_count: int
+    priced_route_count: int
+    positive_route_count: int
+    best_estimated_return_bps: Decimal | None
+
+
 def _estimate_route(
     route: TriangularRoute,
     tickers: Mapping[str, BookTicker],
@@ -53,6 +62,16 @@ def screen_routes(
     *,
     limit: int = 20,
 ) -> tuple[BroadCandidate, ...]:
+    return screen_routes_with_diagnostics(routes, tickers, start_amount, limit=limit).candidates
+
+
+def screen_routes_with_diagnostics(
+    routes: Sequence[TriangularRoute],
+    tickers: Mapping[str, BookTicker],
+    start_amount: Decimal,
+    *,
+    limit: int = 20,
+) -> BroadScreenResult:
     if not start_amount.is_finite() or start_amount <= 0:
         raise ValueError("broad-screen start amount must be finite and positive")
     if limit < 0:
@@ -63,4 +82,10 @@ def screen_routes(
         if (candidate := _estimate_route(route, tickers, start_amount)) is not None
     ]
     candidates.sort(key=lambda item: (-item.estimated_return_bps, item.route.route_id))
-    return tuple(candidates[:limit])
+    return BroadScreenResult(
+        candidates=tuple(candidates[:limit]),
+        total_route_count=len(routes),
+        priced_route_count=len(candidates),
+        positive_route_count=sum(candidate.estimated_return_bps > 0 for candidate in candidates),
+        best_estimated_return_bps=(candidates[0].estimated_return_bps if candidates else None),
+    )

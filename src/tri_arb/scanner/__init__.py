@@ -13,10 +13,16 @@ from tri_arb.scanner.lifecycle import (
     OpportunityLifecycle,
     OpportunityTracker,
 )
-from tri_arb.scanner.screening import BroadCandidate, screen_routes
+from tri_arb.scanner.screening import (
+    BroadCandidate,
+    BroadScreenResult,
+    screen_routes,
+    screen_routes_with_diagnostics,
+)
 
 __all__ = [
     "BroadCandidate",
+    "BroadScreenResult",
     "CloseReason",
     "ConfirmationOutcome",
     "ConfirmationRejectReason",
@@ -28,4 +34,5 @@ __all__ = [
     "ScannerEngine",
     "confirm_candidate",
     "screen_routes",
+    "screen_routes_with_diagnostics",
 ]

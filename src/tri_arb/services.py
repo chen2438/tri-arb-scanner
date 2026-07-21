@@ -10,6 +10,7 @@ from typing import Any
 from tri_arb.config import Settings
 from tri_arb.market_data import MarketDataService, MarketDataSnapshot
 from tri_arb.presentation import opportunity_to_public, utc_iso
+from tri_arb.scanner.diagnostics import diagnostics_to_public
 from tri_arb.scanner.lifecycle import LifecycleEvent, LifecycleEventType, OpportunityLifecycle
 from tri_arb.scanner.runtime import ScannerRuntime
 
@@ -156,6 +157,7 @@ class ApplicationServices:
             "depth_book_count": market.status.depth_book_count,
             "subscription_count": market.status.subscription_count,
             "active_opportunity_count": scanner.active_count,
+            "diagnostics": diagnostics_to_public(scanner.diagnostics),
             "rest_metadata_age_ms": age(market.status.last_metadata_ms),
             "rest_clock_age_ms": age(market.status.last_clock_ms),
             "rest_ticker_age_ms": age(market.status.last_ticker_ms),

@@ -1,9 +1,24 @@
 import { useState } from "react";
 
-import type { Opportunity, ScannerStatus } from "./types";
+import type { Opportunity, ScannerDiagnostics, ScannerStatus } from "./types";
 import { useScanner } from "./useScanner";
 
-type Tab = "live" | "history" | "status";
+type Tab = "live" | "diagnostics" | "history" | "status";
+
+const rejectReasonLabel: Record<string, string> = {
+  not_selected: "尚未进入深度订阅",
+  missing_current_depth: "三腿深度不完整",
+  stale_generation: "深度连接代次过期",
+  stale_depth: "深度行情过期",
+  leg_skew: "三腿时间偏差过大",
+  missing_price_reference: "缺少价格保护参考价",
+  stale_price_reference: "价格保护参考价过期",
+  price_protection: "触发交易所价格保护",
+  insufficient_depth: "20 档深度不足",
+  below_min_base: "低于最小数量",
+  below_min_quote: "低于最小金额",
+  above_max_quote: "超过最大金额",
+};
 
 const connectionLabel = {
   connecting: "正在连接",
@@ -188,6 +203,30 @@ function StatusPanel({ status }: { status: ScannerStatus | null }) {
   );
 }
 
+function DiagnosticsPanel({ diagnostics }: { diagnostics: ScannerDiagnostics | null }) {
+  if (!diagnostics) return <div className="empty-state"><h2>等待首轮扫描诊断</h2><p>收到完整行情后会显示候选在各阶段的去向。</p></div>;
+  const funnel = [
+    ["全部路径", diagnostics.total_route_count],
+    ["报价完整", diagnostics.priced_route_count],
+    ["广筛正收益", diagnostics.positive_route_count],
+    ["深度候选", diagnostics.shortlisted_route_count],
+    ["精确确认", diagnostics.depth_confirmed_count],
+  ] as const;
+  const rejections = Object.entries(diagnostics.rejection_counts).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+  return (
+    <div className="diagnostics-layout">
+      <section className="status-card status-card--wide">
+        <p className="section-kicker">CURRENT SCAN FUNNEL</p><h2>本轮机会漏斗</h2>
+        <div className="funnel-grid">{funnel.map(([label, value]) => <div key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>
+        <p className="diagnostic-summary">广筛最高 {diagnostics.best_estimated_return_bps === null ? "—" : signed(diagnostics.best_estimated_return_bps, " bps")} · 最近一小时精确样本 {diagnostics.rolling_confirmed_sample_count} · 最高 {diagnostics.rolling_max_net_return_bps === null ? "—" : signed(diagnostics.rolling_max_net_return_bps, " bps")}</p>
+      </section>
+      <section className="status-card"><p className="section-kicker">REJECTIONS</p><h2>本轮拒绝原因</h2>{rejections.length === 0 ? <p className="muted">本轮没有拒绝记录。</p> : <dl className="rejection-list">{rejections.map(([reason, count]) => <div key={reason}><dt>{rejectReasonLabel[reason] ?? reason}</dt><dd>{count}</dd></div>)}</dl>}</section>
+      <section className="status-card"><p className="section-kicker">ONE HOUR</p><h2>精确收益分布</h2><dl className="rejection-list"><div><dt>负收益</dt><dd>{diagnostics.rolling_buckets.negative ?? 0}</dd></div><div><dt>0–5 bps</dt><dd>{diagnostics.rolling_buckets["0_to_5"] ?? 0}</dd></div><div><dt>5–10 bps</dt><dd>{diagnostics.rolling_buckets["5_to_10"] ?? 0}</dd></div><div><dt>10 bps–门槛</dt><dd>{diagnostics.rolling_buckets["10_to_threshold"] ?? 0}</dd></div><div><dt>达到机会门槛</dt><dd>{diagnostics.rolling_buckets.opportunity ?? 0}</dd></div></dl></section>
+      <section className="status-card status-card--wide"><p className="section-kicker">NEAR MISSES</p><h2>当前近似机会</h2>{diagnostics.near_misses.length === 0 ? <p className="muted">当前没有净收益介于 0 bps 与机会门槛之间、且通过深度确认的路径。</p> : <div className="near-miss-list">{diagnostics.near_misses.map((item) => <article key={item.route_id}><strong>{item.assets.join(" → ")}</strong><span>{signed(item.net_return_bps, " bps")}</span><small>预估 {signed(item.estimated_profit)} · 容量 {item.confirmed_capacity} · 行情 {formatAge(item.market_age_ms)}</small></article>)}</div>}</section>
+    </div>
+  );
+}
+
 export default function App() {
   const scanner = useScanner();
   const [tab, setTab] = useState<Tab>("live");
@@ -219,11 +258,12 @@ export default function App() {
       </section>
 
       <nav className="tabs" aria-label="扫描器页面">
-        {(["live", "history", "status"] as const).map((value) => <button key={value} className={tab === value ? "active" : ""} type="button" onClick={() => setTab(value)}>{value === "live" ? `实时机会 ${scanner.live.opportunities.length}` : value === "history" ? "历史记录" : "系统状态"}</button>)}
+        {(["live", "diagnostics", "history", "status"] as const).map((value) => <button key={value} className={tab === value ? "active" : ""} type="button" onClick={() => setTab(value)}>{value === "live" ? `实时机会 ${scanner.live.opportunities.length}` : value === "diagnostics" ? "扫描诊断" : value === "history" ? "历史记录" : "系统状态"}</button>)}
       </nav>
 
       <section className="workspace">
         {tab === "live" && <OpportunityTable opportunities={scanner.live.opportunities} />}
+        {tab === "diagnostics" && <DiagnosticsPanel diagnostics={status?.diagnostics ?? null} />}
         {tab === "history" && <>{scanner.historyError && <p className="inline-error" role="alert">{scanner.historyError}</p>}<OpportunityTable opportunities={scanner.history} history />{scanner.historyCursor && <button className="load-more" type="button" disabled={scanner.historyLoading} onClick={scanner.loadMoreHistory}>{scanner.historyLoading ? "正在加载…" : "加载更多历史"}</button>}</>}
         {tab === "status" && <StatusPanel status={status} />}
       </section>

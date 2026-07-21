@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from tests.test_subscriptions import _route
 from tri_arb.domain.models import BookTicker
-from tri_arb.scanner import screen_routes
+from tri_arb.scanner import screen_routes, screen_routes_with_diagnostics
 
 
 def _ticker(symbol: str, bid: str, ask: str) -> BookTicker:
@@ -48,3 +48,10 @@ def test_skips_incomplete_routes_and_sorts_deterministically() -> None:
 
     assert candidates[0].route.route_id == first.route_id
     assert screen_routes((first,), missing, Decimal("100")) == ()
+
+    diagnostics = screen_routes_with_diagnostics((first, second), tickers, Decimal("100"), limit=1)
+    assert diagnostics.total_route_count == 2
+    assert diagnostics.priced_route_count == 2
+    assert diagnostics.positive_route_count == 0
+    assert len(diagnostics.candidates) == 1
+    assert diagnostics.best_estimated_return_bps is not None

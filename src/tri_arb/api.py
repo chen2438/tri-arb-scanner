@@ -97,6 +97,11 @@ def create_app(
     async def status() -> dict[str, Any]:
         return await resolved_services.status_payload()
 
+    @app.get("/api/diagnostics")
+    async def diagnostics() -> dict[str, Any]:
+        status_payload = await resolved_services.status_payload()
+        return {"diagnostics": status_payload["diagnostics"]}
+
     @app.get("/api/config")
     async def public_config() -> dict[str, str | int]:
         return resolved.public_dict()

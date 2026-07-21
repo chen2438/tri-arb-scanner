@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from tri_arb.config import Settings
 from tri_arb.market_data import MarketDataService
 from tri_arb.observability import get_logger, log_event
+from tri_arb.scanner.diagnostics import DiagnosticsTracker, ScannerDiagnostics
 from tri_arb.scanner.engine import ScannerCycle, ScannerEngine
 from tri_arb.scanner.lifecycle import LifecycleEvent, OpportunityLifecycle, OpportunityTracker
 from tri_arb.storage.database import OpportunityStore, StoredLifecycle
@@ -26,6 +27,7 @@ class ScannerRuntimeStatus:
     persisted_event_count: int
     restart_closed_count: int
     last_cleanup_ms: int | None
+    diagnostics: ScannerDiagnostics | None
 
 
 OnEvents = Callable[[tuple[LifecycleEvent, ...]], Awaitable[None]]
@@ -65,6 +67,7 @@ class ScannerRuntime:
         self._event_count = 0
         self._restart_closed_count = 0
         self._last_cleanup_ms: int | None = None
+        self._diagnostics = DiagnosticsTracker()
 
     async def start(self) -> None:
         if self._started:
@@ -104,6 +107,7 @@ class ScannerRuntime:
             persisted_event_count=self._event_count,
             restart_closed_count=self._restart_closed_count,
             last_cleanup_ms=self._last_cleanup_ms,
+            diagnostics=self._diagnostics.latest(),
         )
 
     def _log_lifecycle_events(self, lifecycle_events: tuple[LifecycleEvent, ...]) -> None:
@@ -124,6 +128,9 @@ class ScannerRuntime:
         if not self._started:
             raise RuntimeError("scanner runtime is not started")
         lifecycle_events = self._tracker.apply_cycle(cycle)
+        self._diagnostics.observe(
+            cycle, opportunity_threshold_bps=self._settings.min_net_return_bps
+        )
         await self._store.record_events(lifecycle_events)
         self._last_cycle_ms = cycle.evaluated_at_ms
         self._event_count += len(lifecycle_events)

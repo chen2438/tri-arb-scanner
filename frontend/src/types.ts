@@ -60,6 +60,7 @@ export type ScannerStatus = {
   depth_book_count: number;
   subscription_count: number;
   active_opportunity_count: number;
+  diagnostics: ScannerDiagnostics | null;
   rest_metadata_age_ms: number | null;
   rest_clock_age_ms: number | null;
   rest_ticker_age_ms: number | null;
@@ -67,6 +68,31 @@ export type ScannerStatus = {
   last_scan_at: string | null;
   last_error: string | null;
   websocket_connections: WebSocketConnection[];
+};
+
+export type NearMiss = {
+  route_id: string;
+  assets: [string, string, string, string];
+  net_return_bps: string;
+  estimated_profit: string;
+  confirmed_capacity: string;
+  market_age_ms: number;
+  leg_skew_ms: number;
+};
+
+export type ScannerDiagnostics = {
+  updated_at_ms: number;
+  total_route_count: number;
+  priced_route_count: number;
+  positive_route_count: number;
+  shortlisted_route_count: number;
+  depth_confirmed_count: number;
+  best_estimated_return_bps: string | null;
+  rejection_counts: Record<string, number>;
+  near_misses: NearMiss[];
+  rolling_confirmed_sample_count: number;
+  rolling_max_net_return_bps: string | null;
+  rolling_buckets: Record<string, number>;
 };
 
 export type PublicConfig = {
