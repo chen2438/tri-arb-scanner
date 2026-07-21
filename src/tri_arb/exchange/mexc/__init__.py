@@ -2,6 +2,8 @@
 
 from tri_arb.exchange.mexc.depth import (
     DepthTiming,
+    DepthTimingError,
+    DepthTimingViolation,
     MexcDepthDecodeError,
     decode_depth_frame,
     depth_channel,
@@ -37,6 +39,8 @@ from tri_arb.exchange.mexc.websocket import (
 __all__ = [
     "BookTickerRejection",
     "DepthTiming",
+    "DepthTimingError",
+    "DepthTimingViolation",
     "DepthUpdate",
     "MarketLease",
     "MarketMetadataRejection",

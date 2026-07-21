@@ -160,6 +160,7 @@ class MexcDepthWebSocketShard:
             self._url,
             ping_interval=None,
             open_timeout=3,
+            close_timeout=1,
             max_size=2 * 1024 * 1024,
         ) as websocket:
             active: set[str] = set()

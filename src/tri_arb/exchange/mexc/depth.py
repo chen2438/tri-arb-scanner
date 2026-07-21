@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from enum import StrEnum
 
 from google.protobuf.message import DecodeError
 
@@ -23,6 +24,17 @@ class MexcDepthDecodeError(ValueError):
 class DepthTiming:
     market_age_ms: int
     leg_skew_ms: int
+
+
+class DepthTimingViolation(StrEnum):
+    STALE = "stale_depth"
+    LEG_SKEW = "leg_skew"
+
+
+class DepthTimingError(ValueError):
+    def __init__(self, violation: DepthTimingViolation, message: str) -> None:
+        self.violation = violation
+        super().__init__(message)
 
 
 def depth_channel(symbol: str) -> str:
@@ -65,7 +77,11 @@ def decode_depth_frame(frame: bytes, *, received_time_ms: int) -> OrderBook:
     if wrapper.sendTime <= 0:
         raise MexcDepthDecodeError("invalid depth sendTime")
     depth = wrapper.publicLimitDepths
-    if depth.eventType != DEPTH_EVENT_TYPE or not depth.version:
+    if (
+        depth.eventType != DEPTH_EVENT_TYPE
+        or not depth.version.isdecimal()
+        or int(depth.version) <= 0
+    ):
         raise MexcDepthDecodeError("invalid depth event type or version")
     try:
         return OrderBook(
@@ -96,7 +112,13 @@ def validate_depth_timing(
     market_age = max(ages)
     leg_skew = max(source_times) - min(source_times)
     if market_age > max_age_ms:
-        raise ValueError("depth snapshot is stale relative to MEXC server time")
+        raise DepthTimingError(
+            DepthTimingViolation.STALE,
+            "depth snapshot is stale relative to MEXC server time",
+        )
     if leg_skew > max_leg_skew_ms:
-        raise ValueError("depth legs exceed the maximum source-time skew")
+        raise DepthTimingError(
+            DepthTimingViolation.LEG_SKEW,
+            "depth legs exceed the maximum source-time skew",
+        )
     return DepthTiming(market_age_ms=market_age, leg_skew_ms=leg_skew)

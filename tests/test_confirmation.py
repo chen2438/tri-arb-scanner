@@ -1,0 +1,109 @@
+from decimal import Decimal
+
+from tests.test_simulation import _route_and_books
+from tri_arb.exchange.mexc import (
+    DepthUpdate,
+    MarketLease,
+    SubscriptionPlan,
+    WebSocketState,
+    WebSocketStatus,
+)
+from tri_arb.scanner import BroadCandidate, confirm_candidate
+
+
+def _inputs(*, generation: int = 1):
+    route, books = _route_and_books()
+    symbols = tuple(sorted(books))
+    candidate = BroadCandidate(route, Decimal("100"), Decimal("102"), Decimal("200"))
+    updates = {symbol: DepthUpdate(book, 0, generation, 1) for symbol, book in books.items()}
+    plan = SubscriptionPlan(
+        leases=tuple(MarketLease(symbol, 1) for symbol in symbols),
+        selected_route_ids=(route.route_id,),
+        shards=(symbols, ()),
+    )
+    statuses = (
+        WebSocketStatus(0, WebSocketState.CONNECTED, 1, symbols),
+        WebSocketStatus(1, WebSocketState.IDLE, 0, ()),
+    )
+    return candidate, updates, plan, statuses
+
+
+def test_confirms_current_three_leg_depth_and_capacity() -> None:
+    candidate, updates, plan, statuses = _inputs()
+
+    outcome = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        safety_buffer_bps=Decimal("5"),
+    )
+
+    assert outcome.accepted
+    assert outcome.simulation is not None
+    assert outcome.simulation.net_return_bps == Decimal("195.00")
+    assert outcome.confirmed_capacity_usdt is not None
+    assert outcome.confirmed_capacity_usdt >= Decimal("100")
+    assert outcome.timing is not None
+    assert outcome.timing.market_age_ms == 100
+
+
+def test_rejects_missing_or_stale_connection_generation() -> None:
+    candidate, updates, plan, statuses = _inputs(generation=0)
+
+    stale_generation = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        safety_buffer_bps=Decimal("5"),
+    )
+    updates.pop(candidate.route.edges[0].market.symbol)
+    missing = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        safety_buffer_bps=Decimal("5"),
+    )
+
+    assert stale_generation.reject_reasons == ("stale_generation",)
+    assert missing.reject_reasons == ("missing_current_depth", "stale_generation")
+
+
+def test_rejects_stale_or_skewed_depth_before_simulation() -> None:
+    candidate, updates, plan, statuses = _inputs()
+
+    stale = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_002_001,
+        safety_buffer_bps=Decimal("5"),
+    )
+    skewed_symbol = candidate.route.edges[0].market.symbol
+    old = updates[skewed_symbol]
+    skewed_book = type(old.book)(
+        symbol=old.book.symbol,
+        bids=old.book.bids,
+        asks=old.book.asks,
+        version=old.book.version,
+        source_time_ms=998_999,
+        received_time_ms=old.book.received_time_ms,
+    )
+    updates[skewed_symbol] = DepthUpdate(skewed_book, 0, 1, 1)
+    skewed = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_000,
+        safety_buffer_bps=Decimal("5"),
+    )
+
+    assert stale.reject_reasons == ("stale_depth",)
+    assert skewed.reject_reasons == ("leg_skew",)

@@ -3,11 +3,14 @@ from decimal import Decimal
 import pytest
 
 from tri_arb.config import Settings
-from tri_arb.domain.models import BookTicker, ConversionSide, MarketRules
+from tri_arb.domain.models import BookLevel, BookTicker, ConversionSide, MarketRules, OrderBook
 from tri_arb.exchange.mexc import (
+    DepthUpdate,
     NormalizedBookTickers,
     NormalizedExchangeInfo,
     ServerClock,
+    WebSocketState,
+    WebSocketStatus,
 )
 from tri_arb.market_data import MarketDataPhase, MarketDataService
 
@@ -97,3 +100,39 @@ async def test_reconciles_ranked_routes_into_complete_depth_subscription_plan() 
     assert len(plan.symbols) == 3
     assert snapshot.status.subscription_count == 3
     assert snapshot.depth_books == {}
+
+
+@pytest.mark.asyncio
+async def test_discards_out_of_order_depth_and_clears_it_on_disconnect() -> None:
+    service = MarketDataService(
+        Settings(mexc_ws_url="ws://127.0.0.1:1/ws", _env_file=None),
+        rest_client=FakeRestClient(),  # type: ignore[arg-type]
+        now_ms=lambda: 20_000,
+    )
+    await service.refresh_metadata()
+    route = (await service.snapshot()).routes[0]
+    await service.set_ranked_routes((route,))
+    plan = await service.reconcile_depth()
+    symbol = plan.shards[0][0]
+    connected = WebSocketStatus(0, WebSocketState.CONNECTED, 1, plan.shards[0])
+    await service._accept_ws_status(connected)
+
+    def update(version: str, source_time: int) -> DepthUpdate:
+        book = OrderBook(
+            symbol=symbol,
+            bids=(BookLevel(Decimal("1"), Decimal("1")),),
+            asks=(BookLevel(Decimal("2"), Decimal("1")),),
+            version=version,
+            source_time_ms=source_time,
+            received_time_ms=source_time + 1,
+        )
+        return DepthUpdate(book, 0, 1, 1)
+
+    await service._accept_depth(update("2", 20_000))
+    await service._accept_depth(update("1", 19_999))
+    assert (await service.snapshot()).depth_books[symbol].version == "2"
+
+    await service._accept_ws_status(
+        WebSocketStatus(0, WebSocketState.BACKOFF, 1, plan.shards[0], "disconnect")
+    )
+    assert (await service.snapshot()).depth_books == {}

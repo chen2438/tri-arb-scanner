@@ -64,6 +64,7 @@ class MarketDataSnapshot:
     routes: tuple[TriangularRoute, ...]
     tickers: Mapping[str, BookTicker]
     depth_books: Mapping[str, OrderBook]
+    depth_updates: Mapping[str, DepthUpdate]
     clock: ServerClock | None
     subscription_plan: SubscriptionPlan
 
@@ -196,11 +197,39 @@ class MarketDataService:
     async def _accept_depth(self, update: DepthUpdate) -> None:
         async with self._lock:
             expected = self._plan.shards[update.shard_id]
-            if update.book.symbol in expected:
-                self._depth_updates[update.book.symbol] = update
+            status = self._websocket_statuses.get(update.shard_id)
+            if (
+                update.book.symbol not in expected
+                or status is None
+                or status.state is not WebSocketState.CONNECTED
+                or update.connection_generation != status.connection_generation
+            ):
+                return
+            previous = self._depth_updates.get(update.book.symbol)
+            if previous is not None and (
+                update.book.source_time_ms < previous.book.source_time_ms
+                or (
+                    update.book.source_time_ms == previous.book.source_time_ms
+                    and int(update.book.version) <= int(previous.book.version)
+                )
+            ):
+                return
+            self._depth_updates[update.book.symbol] = update
 
     async def _accept_ws_status(self, status: WebSocketStatus) -> None:
         async with self._lock:
+            previous = self._websocket_statuses.get(status.shard_id)
+            if (
+                status.state is not WebSocketState.CONNECTED
+                or previous is None
+                or previous.connection_generation != status.connection_generation
+            ):
+                shard_symbols = set(self._plan.shards[status.shard_id])
+                self._depth_updates = {
+                    symbol: update
+                    for symbol, update in self._depth_updates.items()
+                    if symbol not in shard_symbols
+                }
             self._websocket_statuses[status.shard_id] = status
 
     def _phase(self) -> MarketDataPhase:
@@ -246,6 +275,7 @@ class MarketDataService:
                 routes=self._routes,
                 tickers=dict(self._tickers),
                 depth_books={symbol: update.book for symbol, update in self._depth_updates.items()},
+                depth_updates=dict(self._depth_updates),
                 clock=self._clock,
                 subscription_plan=self._plan,
             )
