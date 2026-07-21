@@ -28,10 +28,15 @@ async def test_calls_only_public_endpoints_and_calibrates_clock() -> None:
             "/api/v3/ticker/bookTicker": [],
             "/api/v3/ticker/24hr": [],
             "/api/v3/time": {"serverTime": 1100},
+            "/api/v3/depth": {
+                "lastUpdateId": 10,
+                "bids": [["100", "1"]],
+                "asks": [["101", "1"]],
+            },
         }[request.url.path]
         return httpx.Response(200, json=payload)
 
-    moments = iter([1000, 1010, 1020])
+    moments = iter([1000, 1010, 1020, 1030])
     async with httpx.AsyncClient(
         base_url="https://api.binance.com", transport=httpx.MockTransport(handler)
     ) as client:
@@ -44,12 +49,15 @@ async def test_calls_only_public_endpoints_and_calibrates_clock() -> None:
         await adapter.exchange_info()
         await adapter.tickers()
         clock = await adapter.calibrate_clock()
+        snapshot = await adapter.depth_snapshot("BTCUSDT")
 
     assert clock.offset_ms == 85
+    assert snapshot.last_update_id == 10
     assert calls == [
         ("/api/v3/exchangeInfo", {"showPermissionSets": "false"}),
         ("/api/v3/executionRules", {"symbolStatus": "TRADING"}),
         ("/api/v3/ticker/bookTicker", {"symbolStatus": "TRADING"}),
         ("/api/v3/ticker/24hr", {"type": "MINI"}),
         ("/api/v3/time", {}),
+        ("/api/v3/depth", {"symbol": "BTCUSDT", "limit": "1000"}),
     ]

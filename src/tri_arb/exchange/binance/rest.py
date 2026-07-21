@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from tri_arb.domain.models import BookTicker, MarketActivity
+from tri_arb.exchange.binance.depth import BinanceDepthSnapshot, normalize_depth_snapshot
 from tri_arb.exchange.binance.metadata import (
     NormalizedBinanceExchangeInfo,
     normalize_exchange_info,
@@ -222,3 +223,13 @@ class BinanceRestClient:
         if isinstance(server_time, bool) or not isinstance(server_time, int) or server_time <= 0:
             raise BinanceRestProtocolError("invalid serverTime")
         return ServerClock(server_time - (started + finished) // 2, finished - started, finished)
+
+    async def depth_snapshot(self, symbol: str) -> BinanceDepthSnapshot:
+        if not symbol or symbol != symbol.strip().upper() or len(symbol) > 64:
+            raise ValueError("invalid Binance depth symbol")
+        payload = await self._request(
+            "/api/v3/depth", {"symbol": symbol, "limit": "1000"}
+        )
+        return normalize_depth_snapshot(
+            payload, symbol=symbol, received_time_ms=self._now_ms()
+        )

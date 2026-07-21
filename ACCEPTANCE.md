@@ -79,3 +79,5 @@ Binance 公共 REST 适配增量验收：
 - `exchangeInfo` 与 `executionRules` 并行读取，所有市场均取得公开 `PRICE_RANGE`；适配器未使用
   API Key，也未调用任何账户或交易端点；
 - 5 项 Binance 专用离线契约测试覆盖规则归一化、手续费下限、逐市场隔离、公共端点集合与时钟校准。
+- 真实 BTCUSDT `@depth@100ms` 流与 1,000 档 REST 快照按官方序列算法衔接成功，输出版本
+  `97706342685` 的 20 bids + 20 asks，并保留交易所事件时间；无时间戳的 `@depth20` 未被采用。

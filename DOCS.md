@@ -165,6 +165,12 @@ Binance REST 适配只访问安全类型为 `NONE` 的公共端点，不使用 A
 全市场 book ticker 与 24 小时 mini ticker 合并后才产生广筛报价和活跃度；429/418 必须遵循
 `Retry-After`，避免触发 Binance 的自动 IP 封禁。
 
+Binance 的 `@depth20` partial stream 没有交易所来源时间，禁止把本地接收时间冒充来源时间。因此深度
+适配采用官方 `@depth@100ms` diff stream，并先读取公共 `/api/v3/depth?limit=1000` 快照：丢弃快照
+版本之前的事件，第一条有效事件必须覆盖 `lastUpdateId + 1`，此后任何序列缺口都使本地状态失效并要求
+重新获取快照。只有应用了带 `E` 来源时间的有效增量后才生成前 20 档 `OrderBook`；快照本身绝不参与
+机会确认。当前已完成确定性重建器和 REST 快照客户端，动态 WebSocket 连接仍属于下一阶段。
+
 ### 3.2 三角路径
 
 有效路径固定为 `ANCHOR -> A -> B -> ANCHOR`：
