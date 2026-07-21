@@ -7,7 +7,7 @@ from tri_arb.config import Settings
 
 @pytest.mark.asyncio
 async def test_health_and_readiness_are_honest_about_scanner_state() -> None:
-    transport = ASGITransport(app=create_app(Settings(_env_file=None)))
+    transport = ASGITransport(app=create_app(Settings(_env_file=None), manage_services=False))
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         live = await client.get("/api/health/live")
         ready = await client.get("/api/health/ready")
@@ -17,13 +17,13 @@ async def test_health_and_readiness_are_honest_about_scanner_state() -> None:
     assert ready.status_code == 503
     assert ready.json() == {
         "status": "not_ready",
-        "reason": "market data pipeline is not implemented yet",
+        "reason": "market data phase is initializing",
     }
 
 
 @pytest.mark.asyncio
 async def test_config_endpoint_returns_only_public_values() -> None:
-    transport = ASGITransport(app=create_app(Settings(_env_file=None)))
+    transport = ASGITransport(app=create_app(Settings(_env_file=None), manage_services=False))
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/config")
 

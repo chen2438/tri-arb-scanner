@@ -1,17 +1,18 @@
 # Tri-Arb Scanner
 
-Tri-Arb Scanner 是一个本地优先、可审计的三角套利机会扫描器。项目当前已建立可运行工程骨架，
-第一阶段聚焦 **MEXC 现货市场的只读扫描**，不包含下单能力。
+Tri-Arb Scanner 是一个本地优先、可审计的三角套利机会扫描器，当前聚焦
+**MEXC 现货市场的只读扫描**，不包含下单能力。
 
 完整范围、计算语义、架构、安全边界和当前状态见 [DOCS.md](DOCS.md)。参与开发前请先阅读
 [AGENTS.md](AGENTS.md)。
 
 ## 当前进度
 
-- 已建立 Python 3.12+ / FastAPI 后端、严格本地配置和 `tri-arb` CLI；
-- 已建立 React / TypeScript / Vite 前端状态页；
-- 已建立后端、前端和 Conventional Commit CI；
-- 行情接入、路径枚举、收益模拟和输出接口尚未实现。
+- 已完成 MEXC 公共 REST、Protobuf WebSocket 20 档行情和两阶段订阅；
+- 已完成 Decimal 三角路径广筛、深度确认、容量、机会生命周期和 SQLite 审计重放；
+- 已完成只读 REST/WebSocket 机会接口及应用运行时；
+- React / TypeScript / Vite 实时仪表盘正在实施；
+- 后端、前端和 Conventional Commit 检查均由 CI 执行。
 
 ## 本地开发
 

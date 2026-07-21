@@ -327,6 +327,21 @@ class OpportunityStore:
             rows = (await connection.execute(statement)).mappings().all()
         return tuple(StoredEvent(**row) for row in rows)
 
+    async def get_lifecycle(self, lifecycle_id: str) -> StoredLifecycle | None:
+        if not self._started:
+            raise RuntimeError("opportunity store is not started")
+        async with self._engine.connect() as connection:
+            row = (
+                (
+                    await connection.execute(
+                        select(lifecycles).where(lifecycles.c.lifecycle_id == lifecycle_id)
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return StoredLifecycle(**row) if row is not None else None
+
     async def stop(self) -> None:
         if not self._started or self._worker is None:
             return

@@ -12,7 +12,7 @@ from tri_arb.market_data import MarketDataService
 from tri_arb.observability import get_logger, log_event
 from tri_arb.scanner.engine import ScannerCycle, ScannerEngine
 from tri_arb.scanner.lifecycle import LifecycleEvent, OpportunityLifecycle, OpportunityTracker
-from tri_arb.storage.database import OpportunityStore
+from tri_arb.storage.database import OpportunityStore, StoredLifecycle
 
 DAY_MS = 24 * 60 * 60 * 1_000
 LOGGER = get_logger(__name__)
@@ -29,9 +29,14 @@ class ScannerRuntimeStatus:
 
 
 OnEvents = Callable[[tuple[LifecycleEvent, ...]], Awaitable[None]]
+OnActive = Callable[[tuple[OpportunityLifecycle, ...]], Awaitable[None]]
 
 
 async def _ignore_events(_events: tuple[LifecycleEvent, ...]) -> None:
+    return None
+
+
+async def _ignore_active(_active: tuple[OpportunityLifecycle, ...]) -> None:
     return None
 
 
@@ -43,11 +48,13 @@ class ScannerRuntime:
         store: OpportunityStore | None = None,
         now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
         on_events: OnEvents = _ignore_events,
+        on_active: OnActive = _ignore_active,
     ) -> None:
         self._settings = settings
         self._store = store or OpportunityStore(settings.database_url)
         self._now_ms = now_ms
         self._on_events = on_events
+        self._on_active = on_active
         self._engine = ScannerEngine(settings, now_ms=now_ms)
         self._tracker = OpportunityTracker(
             open_threshold_bps=settings.min_net_return_bps,
@@ -83,6 +90,12 @@ class ScannerRuntime:
     def active(self) -> tuple[OpportunityLifecycle, ...]:
         return self._tracker.active()
 
+    async def stored_lifecycles(self, *, state: str | None = None) -> tuple[StoredLifecycle, ...]:
+        return await self._store.list_lifecycles(state=state)
+
+    async def stored_lifecycle(self, lifecycle_id: str) -> StoredLifecycle | None:
+        return await self._store.get_lifecycle(lifecycle_id)
+
     def status(self) -> ScannerRuntimeStatus:
         return ScannerRuntimeStatus(
             started=self._started,
@@ -117,6 +130,7 @@ class ScannerRuntime:
         self._log_lifecycle_events(lifecycle_events)
         if lifecycle_events:
             await self._on_events(lifecycle_events)
+        await self._on_active(self._tracker.active())
         now = self._now_ms()
         if self._last_cleanup_ms is None or now - self._last_cleanup_ms >= DAY_MS:
             deleted = await self._store.cleanup(
