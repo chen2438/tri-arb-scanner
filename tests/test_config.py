@@ -16,7 +16,7 @@ def test_defaults_match_documented_safe_configuration() -> None:
     assert settings.min_net_return_bps == Decimal("20")
     assert settings.depth_levels == 20
     assert settings.okx_enabled is True
-    assert settings.okx_taker_commission == Decimal("0.001")
+    assert settings.okx_taker_commission == Decimal("0.0015")
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.10", "scanner.example"])
@@ -90,4 +90,9 @@ def test_public_configuration_preserves_decimals_as_strings() -> None:
     assert payload["notional"] == "100"
     assert payload["safety_buffer_bps"] == "5"
     assert payload["anchor_assets"] == ["USDT", "USDC", "USD1"]
-    assert payload["okx_taker_commission"] == "0.001"
+    assert payload["okx_taker_commission"] == "0.0015"
+
+
+def test_rejects_okx_fee_below_public_regular_user_maximum() -> None:
+    with pytest.raises(ValidationError, match=r"greater than or equal to 0.0015"):
+        Settings(okx_taker_commission="0.001", _env_file=None)

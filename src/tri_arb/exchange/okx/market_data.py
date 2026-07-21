@@ -10,7 +10,13 @@ from collections.abc import Awaitable, Callable
 from tri_arb.config import Settings
 from tri_arb.domain.coverage import CoreCoverage, select_core_coverage
 from tri_arb.domain.graph import build_market_graph, enumerate_triangular_routes
-from tri_arb.domain.models import BookTicker, MarketActivity, MarketRules, TriangularRoute
+from tri_arb.domain.models import (
+    BookTicker,
+    MarketActivity,
+    MarketRules,
+    PriceLimit,
+    TriangularRoute,
+)
 from tri_arb.exchange.mexc import (
     DepthUpdate,
     ServerClock,
@@ -26,6 +32,7 @@ from tri_arb.market_data import (
     CLOCK_INTERVAL_SECONDS,
     MARKET_ACTIVITY_INTERVAL_SECONDS,
     METADATA_INTERVAL_SECONDS,
+    PRICE_REFERENCE_INTERVAL_SECONDS,
     SUBSCRIPTION_INTERVAL_SECONDS,
     MarketDataPhase,
     MarketDataSnapshot,
@@ -65,6 +72,7 @@ class OkxMarketDataService:
         self._ranked_routes: tuple[TriangularRoute, ...] = ()
         self._tickers: dict[str, BookTicker] = {}
         self._activities: dict[str, MarketActivity] = {}
+        self._price_limits: dict[str, PriceLimit] = {}
         self._core = CoreCoverage((), (), ())
         self._depth_updates: dict[str, DepthUpdate] = {}
         self._clock: ServerClock | None = None
@@ -75,6 +83,7 @@ class OkxMarketDataService:
         self._last_clock_ms: int | None = None
         self._last_ticker_ms: int | None = None
         self._last_activity_ms: int | None = None
+        self._last_price_limit_ms: int | None = None
         self._errors: dict[str, str] = {}
         self._stopped = False
         self._websocket_statuses: dict[int, WebSocketStatus] = {}
@@ -130,6 +139,9 @@ class OkxMarketDataService:
             }
             self._depth_updates = {
                 key: value for key, value in self._depth_updates.items() if key in symbols
+            }
+            self._price_limits = {
+                key: value for key, value in self._price_limits.items() if key in symbols
             }
             self._metadata_rejections = len(result.rejections)
             self._last_metadata_ms = self._now_ms()
@@ -194,6 +206,30 @@ class OkxMarketDataService:
             valid = {route.route_id for route in self._routes}
             self._ranked_routes = tuple(route for route in routes if route.route_id in valid)
 
+    async def refresh_price_limits(self) -> tuple[PriceLimit, ...]:
+        async with self._lock:
+            symbols = tuple(sorted(self._plan.symbols))
+        concurrency = asyncio.Semaphore(10)
+
+        async def fetch(symbol: str) -> PriceLimit:
+            async with concurrency:
+                return await self._rest.price_limit(symbol)
+
+        limits = tuple(await asyncio.gather(*(fetch(symbol) for symbol in symbols)))
+        async with self._lock:
+            current_symbols = set(self._plan.symbols)
+            retained = {
+                symbol: value
+                for symbol, value in self._price_limits.items()
+                if symbol in current_symbols
+            }
+            retained.update(
+                {value.symbol: value for value in limits if value.symbol in current_symbols}
+            )
+            self._price_limits = retained
+            self._last_price_limit_ms = self._now_ms() if limits else None
+        return limits
+
     async def reconcile_depth(self) -> SubscriptionPlan:
         async with self._lock:
             plan = reconcile_subscriptions(
@@ -213,6 +249,11 @@ class OkxMarketDataService:
                 symbol: update
                 for symbol, update in self._depth_updates.items()
                 if previous.get(symbol) == current.get(symbol)
+            }
+            self._price_limits = {
+                symbol: value
+                for symbol, value in self._price_limits.items()
+                if symbol in current
             }
             self._plan = plan
             for index, symbols in enumerate(plan.shards):
@@ -273,7 +314,7 @@ class OkxMarketDataService:
                 market_count=len(self._markets),
                 route_count=len(self._routes),
                 ticker_count=len(self._tickers),
-                price_reference_count=0,
+                price_reference_count=len(self._price_limits),
                 market_activity_count=len(self._activities),
                 core_market_count=len(self._core.symbols),
                 core_route_count=len(self._core.covered_route_ids),
@@ -285,7 +326,7 @@ class OkxMarketDataService:
                 last_metadata_ms=self._last_metadata_ms,
                 last_clock_ms=self._last_clock_ms,
                 last_ticker_ms=self._last_ticker_ms,
-                last_price_reference_ms=None,
+                last_price_reference_ms=self._last_price_limit_ms,
                 last_market_activity_ms=self._last_activity_ms,
                 last_error="; ".join(
                     f"{key}={self._errors[key]}" for key in sorted(self._errors)
@@ -301,6 +342,7 @@ class OkxMarketDataService:
                 routes=self._routes,
                 tickers=dict(self._tickers),
                 price_references={},
+                price_limits=dict(self._price_limits),
                 depth_books={key: value.book for key, value in self._depth_updates.items()},
                 depth_updates=dict(self._depth_updates),
                 clock=self._clock,
@@ -333,6 +375,14 @@ class OkxMarketDataService:
                 tasks.create_task(
                     self._periodic(
                         "metadata", self.refresh_metadata, METADATA_INTERVAL_SECONDS, stop
+                    )
+                )
+                tasks.create_task(
+                    self._periodic(
+                        "price_limit",
+                        self.refresh_price_limits,
+                        PRICE_REFERENCE_INTERVAL_SECONDS,
+                        stop,
                     )
                 )
                 tasks.create_task(

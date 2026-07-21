@@ -13,6 +13,8 @@ const rejectReasonLabel: Record<string, string> = {
   leg_skew: "三腿时间偏差过大",
   missing_price_reference: "缺少价格保护参考价",
   stale_price_reference: "价格保护参考价过期",
+  missing_price_limit: "缺少交易所价格限制",
+  stale_price_limit: "交易所价格限制过期",
   price_protection: "触发交易所价格保护",
   insufficient_depth: "20 档深度不足",
   below_min_base: "低于最小数量",
@@ -157,7 +159,7 @@ function OpportunityTable({ opportunities, history = false }: { opportunities: O
 
 function ExchangeStatusCard({ exchange }: { exchange: ExchangeStatus }) {
   const age = (value: number | null) => value === null ? "未收到" : formatAge(value);
-  return <section className="status-card"><p className="section-kicker">{exchange.exchange} · {exchange.phase}</p><h2>{exchange.exchange} 公共行情</h2><dl className="status-list"><div><dt>市场 / 路径</dt><dd>{exchange.market_count} / {exchange.route_count}</dd></div><div><dt>全市场报价</dt><dd>{age(exchange.rest_ticker_age_ms)}</dd></div><div><dt>核心市场 / 覆盖</dt><dd>{exchange.core_market_count} / {exchange.core_route_count}</dd></div><div><dt>深度簿 / 订阅</dt><dd>{exchange.depth_book_count} / {exchange.subscription_count}</dd></div></dl>{exchange.websocket_connections.map((connection) => <div className="venue-connection" key={`${exchange.exchange}-${connection.shard_id}`}><span className={`status-dot status-dot--${connection.state.toLowerCase()}`} /><strong>分片 {connection.shard_id + 1}</strong><small>{connection.subscription_count} 个市场 · 第 {connection.generation} 代</small></div>)}{exchange.last_error && <p className="error-message">{exchange.last_error}</p>}</section>;
+  return <section className="status-card"><p className="section-kicker">{exchange.exchange} · {exchange.phase}</p><h2>{exchange.exchange} 公共行情</h2><dl className="status-list"><div><dt>市场 / 路径</dt><dd>{exchange.market_count} / {exchange.route_count}</dd></div><div><dt>全市场报价</dt><dd>{age(exchange.rest_ticker_age_ms)}</dd></div><div><dt>价格保护数据</dt><dd>{exchange.price_reference_count}</dd></div><div><dt>核心市场 / 覆盖</dt><dd>{exchange.core_market_count} / {exchange.core_route_count}</dd></div><div><dt>深度簿 / 订阅</dt><dd>{exchange.depth_book_count} / {exchange.subscription_count}</dd></div></dl>{exchange.websocket_connections.map((connection) => <div className="venue-connection" key={`${exchange.exchange}-${connection.shard_id}`}><span className={`status-dot status-dot--${connection.state.toLowerCase()}`} /><strong>分片 {connection.shard_id + 1}</strong><small>{connection.subscription_count} 个市场 · 第 {connection.generation} 代</small></div>)}{exchange.last_error && <p className="error-message">{exchange.last_error}</p>}</section>;
 }
 
 function StatusPanel({ status }: { status: ScannerStatus | null }) {

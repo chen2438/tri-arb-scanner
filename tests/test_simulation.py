@@ -8,6 +8,7 @@ from tri_arb.domain import (
     ConversionSide,
     MarketRules,
     OrderBook,
+    PriceLimit,
     PriceProtection,
     RejectReason,
     build_market_graph,
@@ -172,6 +173,41 @@ def test_rejects_book_levels_outside_price_protection_and_requires_reference() -
     assert blocked.reject_reasons == (RejectReason.PRICE_PROTECTION,)
     assert allowed.simulation is not None
     assert allowed.simulation.legs[0].price_protection_limit == Decimal("10800.0")
+
+
+def test_applies_exchange_computed_price_limits_and_requires_current_input() -> None:
+    route, books = _route_and_books()
+    first = replace(
+        route.edges[0],
+        market=replace(route.edges[0].market, requires_explicit_price_limit=True),
+    )
+    route = replace(route, edges=(first, *route.edges[1:]))
+    missing = simulate_route(route, books, Decimal("100"))
+    blocked = simulate_route(
+        route,
+        books,
+        Decimal("100"),
+        price_limits={
+            "BTCUSDT": PriceLimit(
+                "BTCUSDT", True, Decimal("9999"), Decimal("9000"), 1_000_000, 1_000_010
+            )
+        },
+    )
+    allowed = simulate_route(
+        route,
+        books,
+        Decimal("100"),
+        price_limits={
+            "BTCUSDT": PriceLimit(
+                "BTCUSDT", True, Decimal("10000"), Decimal("9000"), 1_000_000, 1_000_010
+            )
+        },
+    )
+
+    assert missing.reject_reasons == (RejectReason.MISSING_PRICE_LIMIT,)
+    assert blocked.reject_reasons == (RejectReason.PRICE_PROTECTION,)
+    assert allowed.simulation is not None
+    assert allowed.simulation.legs[0].price_protection_limit == Decimal("10000")
 
 
 def test_checks_sell_floor_and_stops_capacity_at_protected_depth() -> None:

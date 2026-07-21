@@ -7,7 +7,7 @@ import aiosqlite
 import pytest
 
 from tests.test_confirmation import _inputs
-from tri_arb.domain.models import BookLevel, PriceProtection, PriceReference
+from tri_arb.domain.models import BookLevel, PriceLimit, PriceProtection, PriceReference
 from tri_arb.scanner import OpportunityTracker, ScannerCycle, confirm_candidate
 from tri_arb.storage import OpportunityStore, replay_audit_snapshot, serialize_lifecycle
 
@@ -71,6 +71,45 @@ def test_replays_price_protection_rules_and_reference_prices() -> None:
     snapshot = serialize_lifecycle(tracker.active()[0])
 
     assert '"price_reference":"9000"' in snapshot
+    assert replay_audit_snapshot(snapshot).matches_recorded
+
+
+def test_replays_exchange_computed_price_limit_inputs() -> None:
+    candidate, updates, plan, statuses = _inputs()
+    first = candidate.route.edges[0]
+    limited = replace(
+        first,
+        market=replace(first.market, requires_explicit_price_limit=True),
+    )
+    candidate = replace(
+        candidate,
+        route=replace(candidate.route, edges=(limited, *candidate.route.edges[1:])),
+    )
+    outcome = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        local_time_ms=1_000_100,
+        price_limits={
+            first.market.symbol: PriceLimit(
+                first.market.symbol,
+                True,
+                Decimal("11000"),
+                Decimal("9000"),
+                1_000_000,
+                1_000_050,
+            )
+        },
+        safety_buffer_bps=Decimal("5"),
+    )
+    assert outcome.accepted
+    tracker = OpportunityTracker(lifecycle_id=lambda: "limited-lifecycle")
+    tracker.apply_cycle(_cycle(1_000, outcome))
+    snapshot = serialize_lifecycle(tracker.active()[0])
+
+    assert '"price_limits":[{' in snapshot
     assert replay_audit_snapshot(snapshot).matches_recorded
 
 

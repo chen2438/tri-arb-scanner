@@ -12,6 +12,7 @@ from tri_arb.exchange.okx.rest import (
     OkxRestClient,
     OkxRestError,
     OkxRestProtocolError,
+    normalize_price_limit,
     normalize_tickers,
 )
 
@@ -26,5 +27,6 @@ __all__ = [
     "OkxRestError",
     "OkxRestProtocolError",
     "normalize_instruments",
+    "normalize_price_limit",
     "normalize_tickers",
 ]

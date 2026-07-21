@@ -2,7 +2,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from tests.test_simulation import _route_and_books
-from tri_arb.domain.models import PriceProtection, PriceReference
+from tri_arb.domain.models import PriceLimit, PriceProtection, PriceReference
 from tri_arb.exchange.mexc import (
     DepthUpdate,
     MarketLease,
@@ -148,3 +148,67 @@ def test_fails_closed_for_missing_or_stale_protection_reference() -> None:
 
     assert missing.reject_reasons == ("missing_price_reference",)
     assert stale.reject_reasons == ("stale_price_reference",)
+
+
+def test_fails_closed_for_missing_stale_or_blocking_explicit_price_limit() -> None:
+    candidate, updates, plan, statuses = _inputs()
+    first = candidate.route.edges[0]
+    limited_edge = replace(
+        first,
+        market=replace(first.market, requires_explicit_price_limit=True),
+    )
+    candidate = replace(
+        candidate,
+        route=replace(candidate.route, edges=(limited_edge, *candidate.route.edges[1:])),
+    )
+    missing = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        local_time_ms=1_000_100,
+        safety_buffer_bps=Decimal("5"),
+    )
+    stale = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        local_time_ms=1_000_100,
+        price_limits={
+            first.market.symbol: PriceLimit(
+                first.market.symbol,
+                True,
+                Decimal("11000"),
+                Decimal("9000"),
+                900_000,
+                900_000,
+            )
+        },
+        safety_buffer_bps=Decimal("5"),
+    )
+    blocked = confirm_candidate(
+        candidate,
+        updates,
+        plan,
+        statuses,
+        server_time_ms=1_000_100,
+        local_time_ms=1_000_100,
+        price_limits={
+            first.market.symbol: PriceLimit(
+                first.market.symbol,
+                True,
+                Decimal("9999"),
+                Decimal("9000"),
+                1_000_000,
+                1_000_050,
+            )
+        },
+        safety_buffer_bps=Decimal("5"),
+    )
+
+    assert missing.reject_reasons == ("missing_price_limit",)
+    assert stale.reject_reasons == ("stale_price_limit",)
+    assert blocked.reject_reasons == ("price_protection",)

@@ -3,7 +3,11 @@ from decimal import Decimal
 import pytest
 
 from tri_arb.exchange.okx import OkxDepthError, OkxOrderBookState
-from tri_arb.exchange.okx.websocket import control_payload, validate_control_message
+from tri_arb.exchange.okx.websocket import (
+    control_payload,
+    depth_message_symbol,
+    validate_control_message,
+)
 
 
 def _message(
@@ -90,3 +94,11 @@ def test_control_messages_are_deterministic_and_errors_fail_closed() -> None:
     )
     with pytest.raises(ValueError, match="rejected"):
         validate_control_message({"event": "error", "code": "60012"})
+
+
+def test_depth_message_symbol_validates_channel_and_identifier() -> None:
+    assert depth_message_symbol(_message()) == "BTC-USDT"
+    with pytest.raises(OkxDepthError, match="channel"):
+        depth_message_symbol({"arg": {"channel": "books5", "instId": "BTC-USDT"}})
+    with pytest.raises(OkxDepthError, match="symbol"):
+        depth_message_symbol({"arg": {"channel": "books"}})

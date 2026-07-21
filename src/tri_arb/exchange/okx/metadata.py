@@ -98,6 +98,7 @@ def normalize_instruments(
                 allowed_sides=frozenset({ConversionSide.BUY, ConversionSide.SELL}),
                 exchange="OKX",
                 max_base_quantity=None,
+                requires_explicit_price_limit=True,
             )
         except ValueError as error:
             label = str(raw_symbol or f"index {index}")[:MAX_IDENTITY_LENGTH]

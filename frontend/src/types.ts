@@ -62,6 +62,7 @@ export type ExchangeStatus = {
   market_count: number;
   route_count: number;
   ticker_count: number;
+  price_reference_count: number;
   market_activity_count: number;
   core_market_count: number;
   core_route_count: number;

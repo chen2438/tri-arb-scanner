@@ -12,6 +12,7 @@ from tri_arb.domain.models import (
     ConversionSide,
     LegSimulation,
     OrderBook,
+    PriceLimit,
     RejectReason,
     RouteSimulation,
     SimulationOutcome,
@@ -86,6 +87,7 @@ def _simulate_buy(
     book: OrderBook,
     input_amount: Decimal,
     reference_price: Decimal | None,
+    explicit_limit: PriceLimit | None,
 ) -> LegSimulation:
     raw_base = _base_for_quote(input_amount, book.asks)
     base_quantity = _floor(raw_base, edge.market.base_quantum)
@@ -94,6 +96,13 @@ def _simulate_buy(
     quote_spent, levels_consumed = _quote_for_base(base_quantity, book.asks)
     _check_order_rules(edge, base_quantity, quote_spent)
     protection_limit = None
+    if edge.market.requires_explicit_price_limit:
+        if explicit_limit is None:
+            raise _Rejected(RejectReason.MISSING_PRICE_LIMIT)
+        if explicit_limit.enabled:
+            protection_limit = explicit_limit.max_buy_price
+            if book.asks[levels_consumed - 1].price > protection_limit:
+                raise _Rejected(RejectReason.PRICE_PROTECTION)
     if edge.market.price_protection is not None:
         if reference_price is None or not reference_price.is_finite() or reference_price <= ZERO:
             raise _Rejected(RejectReason.MISSING_PRICE_REFERENCE)
@@ -129,6 +138,7 @@ def _simulate_sell(
     book: OrderBook,
     input_amount: Decimal,
     reference_price: Decimal | None,
+    explicit_limit: PriceLimit | None,
 ) -> LegSimulation:
     base_quantity = _floor(input_amount, edge.market.base_quantum)
     if base_quantity <= ZERO:
@@ -136,6 +146,13 @@ def _simulate_sell(
     quote_received, levels_consumed = _quote_for_base(base_quantity, book.bids)
     _check_order_rules(edge, base_quantity, quote_received)
     protection_limit = None
+    if edge.market.requires_explicit_price_limit:
+        if explicit_limit is None:
+            raise _Rejected(RejectReason.MISSING_PRICE_LIMIT)
+        if explicit_limit.enabled:
+            protection_limit = explicit_limit.min_sell_price
+            if book.bids[levels_consumed - 1].price < protection_limit:
+                raise _Rejected(RejectReason.PRICE_PROTECTION)
     if edge.market.price_protection is not None:
         if reference_price is None or not reference_price.is_finite() or reference_price <= ZERO:
             raise _Rejected(RejectReason.MISSING_PRICE_REFERENCE)
@@ -186,6 +203,7 @@ def simulate_route(
     *,
     safety_buffer_bps: Decimal = Decimal("5"),
     reference_prices: Mapping[str, Decimal] | None = None,
+    price_limits: Mapping[str, PriceLimit] | None = None,
 ) -> SimulationOutcome:
     if not start_amount.is_finite() or start_amount <= ZERO:
         return SimulationOutcome(None, (RejectReason.NON_POSITIVE_INPUT,))
@@ -217,10 +235,11 @@ def simulate_route(
         for edge in route.edges:
             book = route_books[edge.market.symbol]
             reference_price = (reference_prices or {}).get(edge.market.symbol)
+            explicit_limit = (price_limits or {}).get(edge.market.symbol)
             leg = (
-                _simulate_buy(edge, book, amount, reference_price)
+                _simulate_buy(edge, book, amount, reference_price, explicit_limit)
                 if edge.side is ConversionSide.BUY
-                else _simulate_sell(edge, book, amount, reference_price)
+                else _simulate_sell(edge, book, amount, reference_price, explicit_limit)
             )
             legs.append(leg)
             amount = leg.output_amount
@@ -253,6 +272,7 @@ def confirmed_capacity(
     known_good_amount: Decimal,
     *,
     reference_prices: Mapping[str, Decimal] | None = None,
+    price_limits: Mapping[str, PriceLimit] | None = None,
     max_doublings: int = 64,
     iterations: int = 32,
 ) -> Decimal:
@@ -262,6 +282,7 @@ def confirmed_capacity(
         known_good_amount,
         safety_buffer_bps=ZERO,
         reference_prices=reference_prices,
+        price_limits=price_limits,
     ).accepted:
         raise ValueError("known_good_amount must produce a valid route simulation")
 
@@ -269,7 +290,12 @@ def confirmed_capacity(
     high = known_good_amount * 2
     for _ in range(max_doublings):
         if not simulate_route(
-            route, books, high, safety_buffer_bps=ZERO, reference_prices=reference_prices
+            route,
+            books,
+            high,
+            safety_buffer_bps=ZERO,
+            reference_prices=reference_prices,
+            price_limits=price_limits,
         ).accepted:
             break
         low = high
@@ -280,7 +306,12 @@ def confirmed_capacity(
     for _ in range(iterations):
         middle = (low + high) / 2
         if simulate_route(
-            route, books, middle, safety_buffer_bps=ZERO, reference_prices=reference_prices
+            route,
+            books,
+            middle,
+            safety_buffer_bps=ZERO,
+            reference_prices=reference_prices,
+            price_limits=price_limits,
         ).accepted:
             low = middle
         else:

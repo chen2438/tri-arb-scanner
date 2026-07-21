@@ -17,6 +17,7 @@ from tri_arb.domain.models import (
     MarketActivity,
     MarketRules,
     OrderBook,
+    PriceLimit,
     PriceReference,
     TriangularRoute,
 )
@@ -85,6 +86,7 @@ class MarketDataSnapshot:
     routes: tuple[TriangularRoute, ...]
     tickers: Mapping[str, BookTicker]
     price_references: Mapping[str, PriceReference]
+    price_limits: Mapping[str, PriceLimit]
     depth_books: Mapping[str, OrderBook]
     depth_updates: Mapping[str, DepthUpdate]
     clock: ServerClock | None
@@ -415,6 +417,7 @@ class MarketDataService:
                 routes=self._routes,
                 tickers=dict(self._tickers),
                 price_references=dict(self._price_references),
+                price_limits={},
                 depth_books={symbol: update.book for symbol, update in self._depth_updates.items()},
                 depth_updates=dict(self._depth_updates),
                 clock=self._clock,

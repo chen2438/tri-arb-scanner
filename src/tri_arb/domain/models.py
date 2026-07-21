@@ -24,6 +24,7 @@ class RejectReason(StrEnum):
     ABOVE_MAX_QUOTE = "above_max_quote"
     ABOVE_MAX_BASE = "above_max_base"
     MISSING_PRICE_REFERENCE = "missing_price_reference"
+    MISSING_PRICE_LIMIT = "missing_price_limit"
     STALE_PRICE_REFERENCE = "stale_price_reference"
     PRICE_PROTECTION = "price_protection"
     INVALID_RULE = "invalid_rule"
@@ -43,6 +44,36 @@ class PriceProtection:
 
 
 @dataclass(frozen=True, slots=True)
+class PriceLimit:
+    """Exchange-computed executable price band for one market."""
+
+    symbol: str
+    enabled: bool
+    max_buy_price: Decimal | None
+    min_sell_price: Decimal | None
+    source_time_ms: int
+    received_time_ms: int
+
+    def __post_init__(self) -> None:
+        if not self.symbol or self.symbol != self.symbol.strip().upper():
+            raise ValueError("invalid price-limit symbol")
+        if self.source_time_ms <= 0 or self.received_time_ms <= 0:
+            raise ValueError("price-limit timestamps must be positive")
+        buy_limit = self.max_buy_price
+        sell_limit = self.min_sell_price
+        values = (buy_limit, sell_limit)
+        if self.enabled:
+            if not all(
+                value is not None and value.is_finite() and value > ZERO for value in values
+            ):
+                raise ValueError("enabled price limit requires positive buy and sell bounds")
+            if buy_limit is not None and sell_limit is not None and sell_limit > buy_limit:
+                raise ValueError("price-limit sell bound cannot exceed buy bound")
+        elif any(value is not None for value in values):
+            raise ValueError("disabled price limit cannot contain bounds")
+
+
+@dataclass(frozen=True, slots=True)
 class MarketRules:
     symbol: str
     base_asset: str
@@ -56,12 +87,15 @@ class MarketRules:
     price_protection: PriceProtection | None = None
     exchange: str = "MEXC"
     max_base_quantity: Decimal | None = None
+    requires_explicit_price_limit: bool = False
 
     def __post_init__(self) -> None:
         if not self.symbol or not self.base_asset or not self.quote_asset or not self.exchange:
             raise ValueError("market identity fields cannot be empty")
         if self.exchange != self.exchange.strip().upper():
             raise ValueError("exchange identity must be uppercase without surrounding whitespace")
+        if self.price_protection is not None and self.requires_explicit_price_limit:
+            raise ValueError("market cannot use reference and explicit price protection together")
         if self.base_asset == self.quote_asset:
             raise ValueError("base and quote assets must differ")
         if not 0 <= self.base_asset_precision <= 30:

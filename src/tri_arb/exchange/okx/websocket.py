@@ -53,6 +53,17 @@ def validate_control_message(message: Mapping[str, Any]) -> bool:
     return False
 
 
+def depth_message_symbol(message: Mapping[str, Any]) -> str:
+    """Return the instrument for a well-formed public books message."""
+    arg = message.get("arg")
+    if not isinstance(arg, Mapping) or arg.get("channel") != DEPTH_CHANNEL:
+        raise OkxDepthError("invalid OKX depth channel")
+    symbol = arg.get("instId")
+    if not isinstance(symbol, str) or not symbol:
+        raise OkxDepthError("invalid OKX depth symbol")
+    return symbol
+
+
 class OkxDepthWebSocketShard:
     def __init__(
         self,
@@ -155,10 +166,12 @@ class OkxDepthWebSocketShard:
                     raise OkxDepthError("OKX WebSocket message must be an object")
                 if validate_control_message(message):
                     continue
-                arg = message.get("arg")
-                symbol = arg.get("instId") if isinstance(arg, Mapping) else None
-                if not isinstance(symbol, str) or symbol not in active:
-                    raise OkxDepthError("unexpected OKX depth symbol")
+                symbol = depth_message_symbol(message)
+                if symbol not in active:
+                    # An update already queued by OKX can arrive after its
+                    # unsubscribe acknowledgement. It belongs to a retired
+                    # local state and must not tear down the whole shard.
+                    continue
                 book = self._states[symbol].apply(message, received_time_ms=self._now_ms())
                 await self._on_depth(
                     DepthUpdate(

@@ -3,7 +3,12 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from tri_arb.exchange.okx import OkxRestClient, OkxRestProtocolError, normalize_tickers
+from tri_arb.exchange.okx import (
+    OkxRestClient,
+    OkxRestProtocolError,
+    normalize_price_limit,
+    normalize_tickers,
+)
 
 
 def _ticker(**overrides):
@@ -38,6 +43,40 @@ def test_quarantines_crossed_or_incomplete_ticker() -> None:
     assert result.rejections[0].symbol == "ETH-USDT"
 
 
+def test_normalizes_enabled_and_disabled_public_price_limits() -> None:
+    enabled = normalize_price_limit(
+        [
+            {
+                "instId": "BTC-USDT",
+                "enabled": True,
+                "buyLmt": "110",
+                "sellLmt": "90",
+                "ts": "1700000000000",
+            }
+        ],
+        symbol="BTC-USDT",
+        received_time_ms=1700000000010,
+    )
+    disabled = normalize_price_limit(
+        [
+            {
+                "instId": "BTC-USDT",
+                "enabled": False,
+                "buyLmt": "",
+                "sellLmt": "",
+                "ts": "1700000000000",
+            }
+        ],
+        symbol="BTC-USDT",
+        received_time_ms=1700000000010,
+    )
+
+    assert enabled.max_buy_price == Decimal("110")
+    assert enabled.min_sell_price == Decimal("90")
+    assert disabled.enabled is False
+    assert disabled.max_buy_price is None
+
+
 @pytest.mark.asyncio
 async def test_calls_only_public_okx_endpoints_and_calibrates_clock() -> None:
     paths = []
@@ -48,6 +87,15 @@ async def test_calls_only_public_okx_endpoints_and_calibrates_clock() -> None:
             "/api/v5/public/instruments": [],
             "/api/v5/market/tickers": [_ticker()],
             "/api/v5/public/time": [{"ts": "1100"}],
+            "/api/v5/public/price-limit": [
+                {
+                    "instId": "BTC-USDT",
+                    "enabled": True,
+                    "buyLmt": "110",
+                    "sellLmt": "90",
+                    "ts": "1100",
+                }
+            ],
         }[request.url.path]
         return httpx.Response(200, json={"code": "0", "msg": "", "data": data})
 
@@ -65,14 +113,17 @@ async def test_calls_only_public_okx_endpoints_and_calibrates_clock() -> None:
         await client.instruments()
         tickers = await client.tickers()
         clock = await client.calibrate_clock()
+        price_limit = await client.price_limit("BTC-USDT")
 
     assert tickers.tickers[0].received_time_ms == 1000
     assert clock.offset_ms == 85
     assert clock.round_trip_ms == 10
+    assert price_limit.enabled
     assert paths == [
         ("/api/v5/public/instruments", "SPOT"),
         ("/api/v5/market/tickers", "SPOT"),
         ("/api/v5/public/time", None),
+        ("/api/v5/public/price-limit", None),
     ]
 
 

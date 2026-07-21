@@ -13,6 +13,7 @@ from tri_arb.domain.models import (
     ConversionSide,
     MarketRules,
     OrderBook,
+    PriceLimit,
     PriceProtection,
     RouteSimulation,
     SimulationOutcome,
@@ -41,6 +42,7 @@ def _market(market: MarketRules) -> dict[str, Any]:
         "max_base_quantity": (
             str(market.max_base_quantity) if market.max_base_quantity is not None else None
         ),
+        "requires_explicit_price_limit": market.requires_explicit_price_limit,
         "taker_commission": str(market.taker_commission),
         "allowed_sides": sorted(side.value for side in market.allowed_sides),
         "price_protection": (
@@ -82,6 +84,19 @@ def _book(book: OrderBook) -> dict[str, Any]:
         "version": book.version,
         "source_time_ms": book.source_time_ms,
         "received_time_ms": book.received_time_ms,
+    }
+
+
+def _price_limit(value: PriceLimit) -> dict[str, Any]:
+    return {
+        "symbol": value.symbol,
+        "enabled": value.enabled,
+        "max_buy_price": str(value.max_buy_price) if value.max_buy_price is not None else None,
+        "min_sell_price": (
+            str(value.min_sell_price) if value.min_sell_price is not None else None
+        ),
+        "source_time_ms": value.source_time_ms,
+        "received_time_ms": value.received_time_ms,
     }
 
 
@@ -133,6 +148,13 @@ def serialize_lifecycle(lifecycle: OpportunityLifecycle) -> str:
     book_symbols = {book.symbol for book in confirmation.books}
     if len(confirmation.books) != 3 or book_symbols != route_symbols:
         raise ValueError("lifecycle audit snapshot requires all three route books")
+    required_limit_symbols = {
+        edge.market.symbol
+        for edge in confirmation.candidate.route.edges
+        if edge.market.requires_explicit_price_limit
+    }
+    if {value.symbol for value in confirmation.price_limits} != required_limit_symbols:
+        raise ValueError("lifecycle audit snapshot requires all explicit price limits")
     payload = {
         "schema_version": AUDIT_SCHEMA_VERSION,
         "lifecycle": {
@@ -149,6 +171,7 @@ def serialize_lifecycle(lifecycle: OpportunityLifecycle) -> str:
         "confirmation": {
             "route": _route(confirmation.candidate.route),
             "books": [_book(book) for book in confirmation.books],
+            "price_limits": [_price_limit(value) for value in confirmation.price_limits],
             "simulation": _simulation(simulation),
             "timing": {
                 "market_age_ms": confirmation.timing.market_age_ms,
@@ -193,6 +216,7 @@ def _decode_market(payload: dict[str, Any]) -> MarketRules:
             if payload.get("max_base_quantity") is not None
             else None
         ),
+        requires_explicit_price_limit=payload.get("requires_explicit_price_limit", False),
     )
 
 
@@ -232,6 +256,25 @@ def _decode_book(payload: dict[str, Any]) -> OrderBook:
     )
 
 
+def _decode_price_limit(payload: dict[str, Any]) -> PriceLimit:
+    return PriceLimit(
+        symbol=payload["symbol"],
+        enabled=payload["enabled"],
+        max_buy_price=(
+            Decimal(payload["max_buy_price"])
+            if payload.get("max_buy_price") is not None
+            else None
+        ),
+        min_sell_price=(
+            Decimal(payload["min_sell_price"])
+            if payload.get("min_sell_price") is not None
+            else None
+        ),
+        source_time_ms=payload["source_time_ms"],
+        received_time_ms=payload["received_time_ms"],
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ReplayResult:
     outcome: SimulationOutcome
@@ -246,6 +289,9 @@ def replay_audit_snapshot(snapshot_json: str) -> ReplayResult:
         confirmation = payload["confirmation"]
         route = _decode_route(confirmation["route"])
         books = tuple(_decode_book(book) for book in confirmation["books"])
+        price_limits = tuple(
+            _decode_price_limit(value) for value in confirmation.get("price_limits", [])
+        )
         if len(books) != 3 or len({book.symbol for book in books}) != 3:
             raise ValueError("audit snapshot must contain three distinct books")
         recorded = confirmation["simulation"]
@@ -259,6 +305,7 @@ def replay_audit_snapshot(snapshot_json: str) -> ReplayResult:
                 for leg in recorded["legs"]
                 if leg.get("price_reference") is not None
             },
+            price_limits={value.symbol: value for value in price_limits},
         )
     except (KeyError, TypeError, json.JSONDecodeError) as error:
         raise ValueError("invalid audit snapshot") from error

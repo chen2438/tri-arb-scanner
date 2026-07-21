@@ -30,6 +30,7 @@ def test_normalizes_public_spot_quantity_rules_without_inventing_quote_limits() 
     assert market.min_quote_amount is None
     assert market.max_quote_amount is None
     assert market.taker_commission == Decimal("0.001")
+    assert market.requires_explicit_price_limit
 
 
 def test_skips_non_live_instruments_and_quarantines_invalid_rules() -> None:

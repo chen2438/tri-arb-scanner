@@ -190,6 +190,7 @@ class ApplicationServices:
                 "market_count": snapshot.status.market_count,
                 "route_count": snapshot.status.route_count,
                 "ticker_count": snapshot.status.ticker_count,
+                "price_reference_count": snapshot.status.price_reference_count,
                 "market_activity_count": snapshot.status.market_activity_count,
                 "core_market_count": snapshot.status.core_market_count,
                 "core_route_count": snapshot.status.core_route_count,

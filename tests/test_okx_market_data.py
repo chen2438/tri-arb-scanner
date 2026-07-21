@@ -3,6 +3,7 @@ from decimal import Decimal
 import pytest
 
 from tri_arb.config import Settings
+from tri_arb.domain.models import PriceLimit
 from tri_arb.exchange.mexc import ServerClock
 from tri_arb.exchange.okx import normalize_instruments, normalize_tickers
 from tri_arb.exchange.okx.market_data import OkxMarketDataService
@@ -56,6 +57,9 @@ class FakeOkxRestClient:
     async def calibrate_clock(self):
         return ServerClock(0, 1, 1000)
 
+    async def price_limit(self, symbol: str):
+        return PriceLimit(symbol, True, Decimal("1000000"), Decimal("0.000001"), 1000, 1000)
+
 
 @pytest.mark.asyncio
 async def test_builds_independent_okx_routes_and_core_depth_plan() -> None:
@@ -89,6 +93,8 @@ async def test_ranked_okx_routes_are_selected_without_mexc_symbols() -> None:
     snapshot = await service.snapshot()
     await service.set_ranked_routes(snapshot.routes)
     plan = await service.reconcile_depth()
+    limits = await service.refresh_price_limits()
 
     assert set(plan.selected_route_ids) == {route.route_id for route in snapshot.routes}
     assert plan.symbols == {"BTC-USDT", "ETH-BTC", "ETH-USDT"}
+    assert {value.symbol for value in limits} == plan.symbols

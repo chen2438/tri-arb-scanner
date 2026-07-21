@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 
-from tri_arb.domain.models import BookTicker, MarketActivity
+from tri_arb.domain.models import BookTicker, MarketActivity, PriceLimit
 from tri_arb.exchange.mexc.rest import ServerClock
 from tri_arb.exchange.okx.metadata import NormalizedOkxInstruments, normalize_instruments
 
@@ -113,6 +113,34 @@ def normalize_tickers(payload: Any, *, received_time_ms: int) -> NormalizedOkxTi
     )
 
 
+def normalize_price_limit(payload: Any, *, symbol: str, received_time_ms: int) -> PriceLimit:
+    if (
+        not isinstance(payload, list)
+        or len(payload) != 1
+        or not isinstance(payload[0], Mapping)
+        or received_time_ms <= 0
+    ):
+        raise OkxRestProtocolError("OKX price-limit response must contain one object")
+    raw = payload[0]
+    if raw.get("instId") != symbol or not isinstance(raw.get("enabled"), bool):
+        raise OkxRestProtocolError("OKX price-limit identity is invalid")
+    enabled = raw["enabled"]
+    try:
+        source_time_ms = int(raw.get("ts"))
+        if str(source_time_ms) != raw.get("ts") or source_time_ms <= 0:
+            raise ValueError
+        return PriceLimit(
+            symbol=symbol,
+            enabled=enabled,
+            max_buy_price=_positive(raw, "buyLmt") if enabled else None,
+            min_sell_price=_positive(raw, "sellLmt") if enabled else None,
+            source_time_ms=source_time_ms,
+            received_time_ms=received_time_ms,
+        )
+    except (TypeError, ValueError) as error:
+        raise OkxRestProtocolError("invalid OKX price-limit values") from error
+
+
 Sleep = Callable[[float], Awaitable[None]]
 NowMs = Callable[[], int]
 
@@ -178,6 +206,12 @@ class OkxRestClient:
         async with self._lock:
             data = await self._request("/api/v5/market/tickers", {"instType": "SPOT"})
             return normalize_tickers(data, received_time_ms=self._now_ms())
+
+    async def price_limit(self, symbol: str) -> PriceLimit:
+        if not symbol or symbol != symbol.strip().upper() or len(symbol) > 64:
+            raise ValueError("invalid OKX price-limit symbol")
+        data = await self._request("/api/v5/public/price-limit", {"instId": symbol})
+        return normalize_price_limit(data, symbol=symbol, received_time_ms=self._now_ms())
 
     async def calibrate_clock(self) -> ServerClock:
         started = self._now_ms()

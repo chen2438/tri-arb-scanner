@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     okx_enabled: bool = True
     okx_rest_url: str = "https://www.okx.com"
     okx_ws_url: str = "wss://ws.okx.com:8443/ws/v5/public"
-    okx_taker_commission: Decimal = Field(default=Decimal("0.001"), ge=0, lt=1)
+    okx_taker_commission: Decimal = Field(default=Decimal("0.0015"), ge=Decimal("0.0015"), lt=1)
     anchor_asset: Literal["USDT"] = "USDT"
     notional: Decimal = Field(default=Decimal("100"), gt=0)
     min_net_return_bps: Decimal = Field(default=Decimal("20"), ge=0)

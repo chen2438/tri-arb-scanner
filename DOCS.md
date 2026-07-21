@@ -17,6 +17,7 @@
 - MEXC `exchangeInfo` 归一化、逐市场隔离诊断和确定性的 USDT/USDC/USD1 三角路径枚举；
 - OKX 公共现货 instruments、tickers、服务器时间和 `books` 增量深度的严格适配层，并与 MEXC
   分别广筛和确认后汇入统一机会生命周期；
+- OKX 候选订阅市场的公共 `price-limit` 动态买入上限/卖出下限轮询、缺失/过期拒绝和审计重放；
 - MEXC `PERCENT_PRICE_BY_SIDE` 价格保护规则归一化，并为候选订阅市场轮询公开 5 分钟参考价；
 - 不使用二进制浮点数的三腿 20 档模拟、手续费、取整、dust、规则拒绝和确认容量计算；
 - 公共 MEXC REST ping、服务器时间校准、交易规则和全量 book ticker 客户端，包含 429、退避、
@@ -122,12 +123,23 @@ OKX 适配层只访问无需认证的 `GET /api/v5/public/instruments`、`GET /a
 调用方显式传入保守的 Decimal taker 费率，并将未公开的最小/最大报价限制表示为“无该类公开规则”，
 不拿 `minSz` 或 USD 限额冒充报价币限制。
 
+无 API Key 模式不能读取账户实际费率。OKX 官方普通用户费率表中常规现货组 taker 为 10 bps，
+special-rule 组为 15 bps，公开 instruments 当前也存在 special-rule `groupId=15` 市场。因此配置默认值
+和允许下限固定为 15 bps；即使大多数市场或高等级账户更低，也宁可少报机会，不允许用 10 bps 默认值
+高估 special-rule 路径。用户不能在只读公共模式把该值调低。
+
 OKX 深度适配使用公共 `books` 通道：每个市场必须先收到 `action=snapshot` 且 `prevSeqId=-1`，之后每条
 `update.prevSeqId` 必须等于本地上一条 `seqId`；任何缺失快照、跳号、倒序、错误频道、意外市场、空簿、
 交叉簿或非法档位都会断开并清空当前连接的簿，重连后等待新快照。数量为零的档位按官方语义删除，
 内部最多保存 400 档，只向核心模拟提供排序后的前 20 档。2026-06-23 起 JSON 深度消息的 checksum
 固定为零且不再用于完整性验证，因此实现只依赖 TLS 与严格 `seqId/prevSeqId` 连续性，不接受 checksum
 作为断档证明。每条数据同时保留 OKX `ts` 和本地接收时间。
+
+OKX 每 10 秒为当前订阅市场轮询公共 `/api/v5/public/price-limit`。`enabled=true` 时，实际吃单的最差
+ask 不能高于 `buyLmt`，最差 bid 不能低于 `sellLmt`；`enabled=false` 明确表示该次响应没有价格边界。
+任何订阅市场缺少响应、本地接收超过 30 秒、OKX `ts` 相对校准时钟超过 30 秒、标识不一致或边界非法，
+候选均以 `missing_price_limit` / `stale_price_limit` fail-closed。完整上下限及时间仍会随审计快照保存，
+离线重放使用相同输入。
 
 OKX 拥有独立行情服务实例：它自行刷新 instruments、tickers 和服务器时钟，枚举带 `OKX|` 前缀的
 USDT/USDC 路径，选择自己的 30 个长期核心市场，并用两条、每条最多 30 个市场的 WebSocket 分片维护
@@ -140,6 +152,7 @@ USDT/USDC 路径，选择自己的 30 个长期核心市场，并用两条、每
 
 - [OKX API v5](https://www.okx.com/docs-v5/en/)
 - [OKX order-book checksum deprecation](https://www.okx.com/en-us/help/okx-order-book-channels-checksum-field-deprecation)
+- [OKX Global Fee Framework](https://www.okx.com/en-gb/help/updates-to-global-fee-framework)
 
 ### 3.2 三角路径
 
@@ -354,7 +367,7 @@ SQLite 只保存：
 | `TRI_ARB_OKX_ENABLED` | `true` | 是否启用 OKX 公共行情与独立扫描 |
 | `TRI_ARB_OKX_REST_URL` | `https://www.okx.com` | OKX 公共 REST 根地址 |
 | `TRI_ARB_OKX_WS_URL` | `wss://ws.okx.com:8443/ws/v5/public` | OKX 公共 WebSocket 地址 |
-| `TRI_ARB_OKX_TAKER_COMMISSION` | `0.001` | 无私有费率接口时使用的保守 taker 费率 |
+| `TRI_ARB_OKX_TAKER_COMMISSION` | `0.0015` | 无私有费率接口时使用的保守 taker 费率；下限 15 bps |
 | `TRI_ARB_ANCHOR_ASSET` | `USDT` | 兼容的主锚定资产；同时固定启用 USDC、USD1 |
 | `TRI_ARB_NOTIONAL` | `100` | 每个锚定资产的起始模拟金额 |
 | `TRI_ARB_MIN_NET_RETURN_BPS` | `20` | 机会开启门槛 |
@@ -439,6 +452,7 @@ market_age_ms, leg_skew_ms, legs[]
   最小基础数量、最大基础数量、最小报价金额和最大报价金额分别校验；
 - 核心领域层拒绝由多个交易所市场组成的路径；当前只扫描各交易所内部闭环，不实现跨交易所三腿；
 - 价格保护规则未知、参考价缺失或过期、实际吃单最差价越过保护边界时 fail-closed；
+- OKX 公共动态价格限制缺失、来源/接收时间过期或实际吃单越界时 fail-closed；
 - REST 429 服从 `Retry-After`，禁止用并发重试放大限频；
 - WebSocket 断线、订阅错误和时间异常立即使对应行情失效；
 - OKX 深度序列不连续时整条连接重建，旧连接代次中的盘口不能参与确认；
@@ -526,6 +540,7 @@ market_age_ms, leg_skew_ms, legs[]
 - 24 小时成交活跃度的零值、非法值、不同报价资产分组排名，以及核心集合路径覆盖、锚定资产种子和
   30/60 市场硬边界；
 - MEXC 价格保护规则归一化、公开均价校验、参考价缺失/过期、买卖边界与容量截断；
+- OKX `price-limit` 启用/停用、标识与数值校验、缺失/双重时间过期、买卖边界与审计重放；
 - Protobuf 固定二进制样本、30 订阅分片、目标集合切换、PING、断线重连和主动轮换；
 - 2 秒新鲜度、1 秒腿间偏差、订阅前旧快照隔离和乱序消息；
 - SQLite 开启/峰值/关闭事件、重启恢复、7 天清理和串行写入；
