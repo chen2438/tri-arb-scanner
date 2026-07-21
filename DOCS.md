@@ -161,6 +161,8 @@ USDT/USDC 路径，选择自己的 30 个长期核心市场，并用两条、每
 - [Bybit V5 Tickers](https://bybit-exchange.github.io/docs/v5/market/tickers)
 - [Bybit V5 Orderbook](https://bybit-exchange.github.io/docs/v5/market/orderbook)
 - [Bybit V5 Order Price Limit](https://bybit-exchange.github.io/docs/v5/market/order-price-limit)
+- [Bybit V5 WebSocket Connect](https://bybit-exchange.github.io/docs/v5/ws/connect)
+- [Bybit V5 WebSocket Orderbook](https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook)
 - [Bybit Spot Fee Structure](https://www.bybit.com/en/help-center/article/Trading-Fee-Structure)
 
 Binance REST 适配只访问安全类型为 `NONE` 的公共端点，不使用 API Key。`exchangeInfo` 的 `LOT_SIZE`
@@ -541,6 +543,8 @@ market_age_ms, leg_skew_ms, legs[]
 - 已实现 Bybit V5 公共 instruments/tickers/time、REST 深度快照与逐市场公开价格限制归一化；Bybit
   市场要求显式价格限制，未取得新鲜 `price-limit` 时不得确认机会。公共只读配置使用覆盖普通现货和
   特殊交易区非 VIP 费率的 20 bps 保守手续费下限。
+- 已实现 Bybit 公共 `orderbook.200` snapshot/delta 重建，使用 `u/seq` 拒绝乱序、保留消息顶层 `cts` 来源
+  时间，并按官方单次最多 10 个现货 topic 的限制分批动态订阅；重连后必须等待新 snapshot。
 
 ### 里程碑 4：扫描、生命周期与存储
 
