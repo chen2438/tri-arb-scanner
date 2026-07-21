@@ -18,6 +18,8 @@
 - OKX 公共现货 instruments、tickers、服务器时间和 `books` 增量深度的严格适配层，并与 MEXC
   分别广筛和确认后汇入统一机会生命周期；
 - OKX 候选订阅市场的公共 `price-limit` 动态买入上限/卖出下限轮询、缺失/过期拒绝和审计重放；
+- Binance 公共 `exchangeInfo`、`executionRules`、book ticker、24 小时活跃度和服务器时钟的严格
+  REST 适配层；当前尚未接入应用扫描循环，WebSocket 深度与完整启用仍属于下一阶段；
 - MEXC `PERCENT_PRICE_BY_SIDE` 价格保护规则归一化，并为候选订阅市场轮询公开 5 分钟参考价；
 - 不使用二进制浮点数的三腿 20 档模拟、手续费、取整、dust、规则拒绝和确认容量计算；
 - 公共 MEXC REST ping、服务器时间校准、交易规则和全量 book ticker 客户端，包含 429、退避、
@@ -153,6 +155,15 @@ USDT/USDC 路径，选择自己的 30 个长期核心市场，并用两条、每
 - [OKX API v5](https://www.okx.com/docs-v5/en/)
 - [OKX order-book checksum deprecation](https://www.okx.com/en-us/help/okx-order-book-channels-checksum-field-deprecation)
 - [OKX Global Fee Framework](https://www.okx.com/en-gb/help/updates-to-global-fee-framework)
+- [Binance Spot REST API](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md)
+- [Binance Spot Filters](https://github.com/binance/binance-spot-api-docs/blob/master/filters.md)
+
+Binance REST 适配只访问安全类型为 `NONE` 的公共端点，不使用 API Key。`exchangeInfo` 的 `LOT_SIZE`
+和 `NOTIONAL`/`MIN_NOTIONAL` 被归一化为数量及报价约束；公开 `executionRules` 的 `PRICE_RANGE` 被转换为
+交易所无关的买卖偏离边界。缺少执行规则、必需过滤器、MARKET 支持或结构异常的市场逐个隔离。无账户
+接口时使用官方普通现货用户典型 10 bps taker 费率作为允许下限，不计 BNB、VIP 或临时活动折扣。
+全市场 book ticker 与 24 小时 mini ticker 合并后才产生广筛报价和活跃度；429/418 必须遵循
+`Retry-After`，避免触发 Binance 的自动 IP 封禁。
 
 ### 3.2 三角路径
 
