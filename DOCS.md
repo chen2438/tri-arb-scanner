@@ -129,10 +129,14 @@ OKX 深度适配使用公共 `books` 通道：每个市场必须先收到 `actio
 固定为零且不再用于完整性验证，因此实现只依赖 TLS 与严格 `seqId/prevSeqId` 连续性，不接受 checksum
 作为断档证明。每条数据同时保留 OKX `ts` 和本地接收时间。
 
-OKX 已拥有独立行情服务实例：它自行刷新 instruments、tickers 和服务器时钟，枚举带 `OKX|` 前缀的
+OKX 拥有独立行情服务实例：它自行刷新 instruments、tickers 和服务器时钟，枚举带 `OKX|` 前缀的
 USDT/USDC 路径，选择自己的 30 个长期核心市场，并用两条、每条最多 30 个市场的 WebSocket 分片维护
-深度。MEXC 和 OKX 的市场图、短名单、连接代次、盘口和错误状态互不共享；统一扫描调度完成前，应用
-进程仍只启动 MEXC 实例，因此不会把尚未接入生命周期的 OKX 数据误报为机会。
+深度。MEXC 和 OKX 的市场图、短名单、连接代次、盘口和错误状态互不共享。
+
+应用默认同时启动 MEXC 与 OKX。统一扫描循环对每个交易所分别执行多锚定广筛、分别选取最多 20 条
+路径并回写各自的深度订阅，再把两边的精确确认结果合并到同一个生命周期、SQLite、REST 和 WebSocket
+事件流。路径 ID 含交易所前缀，因此一个交易所的缺失、关闭或同名市场不会覆盖另一个交易所的机会。
+聚合诊断统计两边全部路径和最多 40 条短名单，API 状态同时保留总计与 `exchanges` 分交易所明细。
 
 - [OKX API v5](https://www.okx.com/docs-v5/en/)
 - [OKX order-book checksum deprecation](https://www.okx.com/en-us/help/okx-order-book-channels-checksum-field-deprecation)
@@ -222,7 +226,8 @@ estimated_profit = 100 ANCHOR * net_return
 
 ## 4. 行情架构
 
-v0.1 采用单进程异步两阶段架构：REST 负责全市场广筛，WebSocket 负责少量候选路径的深度确认。
+系统采用单进程、多交易所隔离的异步两阶段架构：每个交易所各自用 REST 广筛、WebSocket 确认，再合并
+确认结果。
 
 ```text
 MEXC exchangeInfo ------> 市场规则/有向资产图 ------> USDT/USDC/USD1 三角路径集合
@@ -233,6 +238,10 @@ MEXC 20档 WebSocket ---> 候选深度状态 ----------> 三腿精确模拟
                                                         |
                                                         v
                                        机会生命周期/SQLite/API/网页
+
+OKX instruments/tickers -> OKX 市场图/独立 Top 20 -> OKX books 连续深度
+                                                        |
+                                                        +------> 同一确认结果汇聚点
 ```
 
 ### 4.1 REST 元数据与广筛

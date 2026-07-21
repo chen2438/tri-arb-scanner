@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
 from tri_arb.config import Settings
 from tri_arb.market_data import MarketDataService
 from tri_arb.observability import get_logger, log_event
 from tri_arb.scanner.diagnostics import DiagnosticsTracker, ScannerDiagnostics
-from tri_arb.scanner.engine import ScannerCycle, ScannerEngine
+from tri_arb.scanner.engine import MarketDataSource, ScannerCycle, ScannerEngine
 from tri_arb.scanner.lifecycle import LifecycleEvent, OpportunityLifecycle, OpportunityTracker
 from tri_arb.storage.database import OpportunityStore, StoredLifecycle
 
@@ -152,12 +152,24 @@ class ScannerRuntime:
         await self.process_cycle(cycle)
         return cycle
 
+    async def cycle_many(self, market_data: Sequence[MarketDataSource]) -> ScannerCycle:
+        cycle = await self._engine.cycle_many(market_data)
+        await self.process_cycle(cycle)
+        return cycle
+
     async def run(self, market_data: MarketDataService, stop: asyncio.Event) -> None:
+        await self.run_many((market_data,), stop)
+
+    async def run_many(
+        self, market_data: Sequence[MarketDataSource], stop: asyncio.Event
+    ) -> None:
+        if not market_data:
+            raise ValueError("scanner runtime requires at least one market-data source")
         await self.start()
         interval = self._settings.book_ticker_interval_ms / 1_000
         try:
             while not stop.is_set():
-                await self.cycle(market_data)
+                await self.cycle_many(market_data)
                 try:
                     await asyncio.wait_for(stop.wait(), timeout=interval)
                 except TimeoutError:

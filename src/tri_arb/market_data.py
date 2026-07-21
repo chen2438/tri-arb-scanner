@@ -98,6 +98,8 @@ def _empty_plan() -> SubscriptionPlan:
 class MarketDataService:
     """Own REST schedules, shortlist subscriptions, and coherent latest snapshots."""
 
+    exchange = "MEXC"
+
     def __init__(
         self,
         settings: Settings,

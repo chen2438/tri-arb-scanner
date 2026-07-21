@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 from tri_arb.config import Settings
 from tri_arb.market_data import MarketDataService, MarketDataSnapshot
@@ -34,6 +35,14 @@ class ScannerCycle:
 
 
 OnCycle = Callable[[ScannerCycle], Awaitable[None]]
+
+
+class MarketDataSource(Protocol):
+    exchange: str
+
+    async def snapshot(self) -> MarketDataSnapshot: ...
+
+    async def set_ranked_routes(self, routes: tuple) -> None: ...
 
 
 async def _ignore_cycle(_cycle: ScannerCycle) -> None:
@@ -89,13 +98,55 @@ class ScannerEngine:
             )
         return ScannerCycle(evaluated_at_ms, broad, confirmations, broad_screen)
 
-    async def cycle(self, market_data: MarketDataService) -> ScannerCycle:
+    async def cycle(self, market_data: MarketDataSource) -> ScannerCycle:
         snapshot = await market_data.snapshot()
         cycle = self.evaluate(snapshot)
         await market_data.set_ranked_routes(
             tuple(candidate.route for candidate in cycle.broad_candidates)
         )
         return cycle
+
+    async def cycle_many(self, market_data: Sequence[MarketDataSource]) -> ScannerCycle:
+        if not market_data:
+            raise ValueError("multi-exchange scan requires at least one market-data source")
+        snapshots = await asyncio.gather(*(source.snapshot() for source in market_data))
+        cycles = tuple(self.evaluate(snapshot) for snapshot in snapshots)
+        await asyncio.gather(
+            *(
+                source.set_ranked_routes(
+                    tuple(candidate.route for candidate in cycle.broad_candidates)
+                )
+                for source, cycle in zip(market_data, cycles, strict=True)
+            )
+        )
+        candidates = tuple(
+            sorted(
+                (candidate for cycle in cycles for candidate in cycle.broad_candidates),
+                key=lambda item: (-item.estimated_return_bps, item.route.route_id),
+            )
+        )
+        confirmations = tuple(
+            outcome for cycle in cycles for outcome in cycle.confirmations
+        )
+        screens = tuple(cycle.broad_screen for cycle in cycles if cycle.broad_screen is not None)
+        best_values = tuple(
+            screen.best_estimated_return_bps
+            for screen in screens
+            if screen.best_estimated_return_bps is not None
+        )
+        broad_screen = BroadScreenResult(
+            candidates=candidates,
+            total_route_count=sum(screen.total_route_count for screen in screens),
+            priced_route_count=sum(screen.priced_route_count for screen in screens),
+            positive_route_count=sum(screen.positive_route_count for screen in screens),
+            best_estimated_return_bps=max(best_values, default=None),
+        )
+        return ScannerCycle(
+            evaluated_at_ms=max(cycle.evaluated_at_ms for cycle in cycles),
+            broad_candidates=candidates,
+            confirmations=confirmations,
+            broad_screen=broad_screen,
+        )
 
     async def run(
         self,
