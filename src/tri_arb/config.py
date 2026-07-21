@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     binance_taker_commission: Decimal = Field(
         default=Decimal("0.001"), ge=Decimal("0.001"), lt=1
     )
+    bybit_enabled: bool = True
+    bybit_rest_url: str = "https://api.bybit.com"
+    bybit_ws_url: str = "wss://stream.bybit.com/v5/public/spot"
+    bybit_taker_commission: Decimal = Field(
+        default=Decimal("0.002"), ge=Decimal("0.002"), lt=1
+    )
     anchor_asset: Literal["USDT"] = "USDT"
     notional: Decimal = Field(default=Decimal("100"), gt=0)
     min_net_return_bps: Decimal = Field(default=Decimal("20"), ge=0)
@@ -86,12 +92,12 @@ class Settings(BaseSettings):
             raise ValueError("v0.1 only permits a loopback bind address")
         return value
 
-    @field_validator("mexc_rest_url", "okx_rest_url", "binance_rest_url")
+    @field_validator("mexc_rest_url", "okx_rest_url", "binance_rest_url", "bybit_rest_url")
     @classmethod
     def validate_rest_url(cls, value: str) -> str:
         return _validate_service_url(value, secure_scheme="https", local_scheme="http")
 
-    @field_validator("mexc_ws_url", "okx_ws_url", "binance_ws_url")
+    @field_validator("mexc_ws_url", "okx_ws_url", "binance_ws_url", "bybit_ws_url")
     @classmethod
     def validate_ws_url(cls, value: str) -> str:
         return _validate_service_url(value, secure_scheme="wss", local_scheme="ws")
@@ -136,6 +142,10 @@ class Settings(BaseSettings):
             "binance_rest_url": self.binance_rest_url,
             "binance_ws_url": self.binance_ws_url,
             "binance_taker_commission": str(self.binance_taker_commission),
+            "bybit_enabled": self.bybit_enabled,
+            "bybit_rest_url": self.bybit_rest_url,
+            "bybit_ws_url": self.bybit_ws_url,
+            "bybit_taker_commission": str(self.bybit_taker_commission),
             "anchor_asset": self.anchor_asset,
             "anchor_assets": list(self.anchor_assets),
             "notional": str(self.notional),

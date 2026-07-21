@@ -163,6 +163,7 @@ USDT/USDC 路径，选择自己的 30 个长期核心市场，并用两条、每
 - [Bybit V5 Order Price Limit](https://bybit-exchange.github.io/docs/v5/market/order-price-limit)
 - [Bybit V5 WebSocket Connect](https://bybit-exchange.github.io/docs/v5/ws/connect)
 - [Bybit V5 WebSocket Orderbook](https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook)
+- [Bybit V5 Rate Limits](https://bybit-exchange.github.io/docs/v5/rate-limit)
 - [Bybit Spot Fee Structure](https://www.bybit.com/en/help-center/article/Trading-Fee-Structure)
 
 Binance REST 适配只访问安全类型为 `NONE` 的公共端点，不使用 API Key。`exchangeInfo` 的 `LOT_SIZE`
@@ -413,6 +414,10 @@ SQLite 只保存：
 | `TRI_ARB_BINANCE_REST_URL` | `https://api.binance.com` | Binance 公共 REST 根地址 |
 | `TRI_ARB_BINANCE_WS_URL` | `wss://data-stream.binance.vision/ws` | Binance 纯公共行情 WebSocket |
 | `TRI_ARB_BINANCE_TAKER_COMMISSION` | `0.001` | 无账户接口时使用的标准 taker 费率；下限 10 bps |
+| `TRI_ARB_BYBIT_ENABLED` | `true` | 是否启用 Bybit 公共行情与独立扫描 |
+| `TRI_ARB_BYBIT_REST_URL` | `https://api.bybit.com` | Bybit V5 公共 REST 根地址 |
+| `TRI_ARB_BYBIT_WS_URL` | `wss://stream.bybit.com/v5/public/spot` | Bybit 公共现货 WebSocket |
+| `TRI_ARB_BYBIT_TAKER_COMMISSION` | `0.002` | 覆盖特殊交易区的保守公开 taker 费率；下限 20 bps |
 | `TRI_ARB_ANCHOR_ASSET` | `USDT` | 兼容的主锚定资产；同时固定启用 USDC、USD1 |
 | `TRI_ARB_NOTIONAL` | `100` | 每个锚定资产的起始模拟金额 |
 | `TRI_ARB_MIN_NET_RETURN_BPS` | `20` | 机会开启门槛 |
@@ -545,6 +550,10 @@ market_age_ms, leg_skew_ms, legs[]
   特殊交易区非 VIP 费率的 20 bps 保守手续费下限。
 - 已实现 Bybit 公共 `orderbook.200` snapshot/delta 重建，使用 `u/seq` 拒绝乱序、保留消息顶层 `cts` 来源
   时间，并按官方单次最多 10 个现货 topic 的限制分批动态订阅；重连后必须等待新 snapshot。
+- Bybit `Trading` 市场可能临时返回单边或空 snapshot；该市场会被单独隔离并忽略后续 delta，直到收到
+  可用新 snapshot，不得让一个不可用市场反复重连并清空同分片的健康盘口。
+- 已实现 Bybit 独立核心集合、分所 Top 20、两分片动态深度、每 10 秒公共价格限制刷新及统一扫描接入；
+  Bybit 路径不得与其他交易所拼接。
 
 ### 里程碑 4：扫描、生命周期与存储
 

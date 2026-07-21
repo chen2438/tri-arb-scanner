@@ -6,6 +6,7 @@ from tri_arb.exchange.bybit.depth import (
     BybitOrderBookState,
     normalize_depth_snapshot,
 )
+from tri_arb.exchange.bybit.market_data import BybitMarketDataService
 from tri_arb.exchange.bybit.metadata import (
     BybitMetadataError,
     BybitMetadataRejection,
@@ -27,6 +28,7 @@ __all__ = [
     "BybitDepthError",
     "BybitDepthSnapshot",
     "BybitDepthWebSocketShard",
+    "BybitMarketDataService",
     "BybitMetadataError",
     "BybitMetadataRejection",
     "BybitOrderBookState",

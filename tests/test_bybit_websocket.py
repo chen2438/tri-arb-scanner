@@ -4,6 +4,7 @@ import pytest
 
 from tri_arb.exchange.bybit import BybitDepthError
 from tri_arb.exchange.bybit.websocket import (
+    BybitDepthWebSocketShard,
     control_payload,
     depth_message_symbol,
     topic,
@@ -33,3 +34,13 @@ def test_validates_control_acknowledgements_and_depth_topic() -> None:
         )
     with pytest.raises(BybitDepthError, match="topic"):
         depth_message_symbol({"topic": "orderbook.50.BTCUSDT"})
+
+
+def test_shard_accepts_at_most_thirty_unique_symbols() -> None:
+    async def on_depth(_update):
+        return None
+
+    shard = BybitDepthWebSocketShard("wss://stream.bybit.test", 0, on_depth)
+    shard.set_symbols(tuple(f"ASSET{i}USDT" for i in range(30)))
+    with pytest.raises(ValueError, match="target symbols"):
+        shard.set_symbols(tuple(f"ASSET{i}USDT" for i in range(31)))

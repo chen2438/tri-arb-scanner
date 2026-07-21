@@ -171,11 +171,13 @@ class BybitDepthWebSocketShard:
             max_size=4 * 1024 * 1024,
         ) as websocket:
             active: set[str] = set()
+            awaiting_snapshot: set[str] = set()
             await self._sync(websocket, active)
             await self._status(WebSocketState.CONNECTED)
             last_ping = self._monotonic()
             while not stop.is_set() and self._targets:
                 if await self._sync(websocket, active):
+                    awaiting_snapshot.intersection_update(active)
                     await self._status(WebSocketState.CONNECTED)
                 if self._monotonic() - last_ping >= PING_INTERVAL_SECONDS:
                     self._request_id += 1
@@ -203,7 +205,23 @@ class BybitDepthWebSocketShard:
                 symbol = depth_message_symbol(message)
                 if symbol not in active:
                     continue
-                book = self._states[symbol].apply(message, received_time_ms=self._now_ms())
+                if symbol in awaiting_snapshot and message.get("type") != "snapshot":
+                    continue
+                try:
+                    book = self._states[symbol].apply(
+                        message, received_time_ms=self._now_ms()
+                    )
+                except BybitDepthError:
+                    if message.get("type") != "snapshot":
+                        raise
+                    # Some Trading instruments temporarily publish a one-sided
+                    # or empty snapshot. Quarantine only that market until a
+                    # fresh snapshot arrives instead of reconnecting and
+                    # invalidating every healthy book on the shard.
+                    self._states[symbol].reset()
+                    awaiting_snapshot.add(symbol)
+                    continue
+                awaiting_snapshot.discard(symbol)
                 await self._on_depth(
                     DepthUpdate(
                         book,

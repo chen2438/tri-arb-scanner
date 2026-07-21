@@ -19,6 +19,8 @@ def test_defaults_match_documented_safe_configuration() -> None:
     assert settings.okx_taker_commission == Decimal("0.0015")
     assert settings.binance_enabled is True
     assert settings.binance_taker_commission == Decimal("0.001")
+    assert settings.bybit_enabled is True
+    assert settings.bybit_taker_commission == Decimal("0.002")
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.10", "scanner.example"])
@@ -44,6 +46,8 @@ def test_allows_insecure_upstream_only_for_loopback() -> None:
         okx_ws_url="ws://127.0.0.1:9003/ws/",
         binance_rest_url="http://localhost:9004/",
         binance_ws_url="ws://127.0.0.1:9005/ws/",
+        bybit_rest_url="http://localhost:9006/",
+        bybit_ws_url="ws://127.0.0.1:9007/ws/",
         _env_file=None,
     )
 
@@ -53,6 +57,8 @@ def test_allows_insecure_upstream_only_for_loopback() -> None:
     assert local.okx_ws_url == "ws://127.0.0.1:9003/ws"
     assert local.binance_rest_url == "http://localhost:9004"
     assert local.binance_ws_url == "ws://127.0.0.1:9005/ws"
+    assert local.bybit_rest_url == "http://localhost:9006"
+    assert local.bybit_ws_url == "ws://127.0.0.1:9007/ws"
     with pytest.raises(ValidationError, match="must use https"):
         Settings(mexc_rest_url="http://api.mexc.com", _env_file=None)
     with pytest.raises(ValidationError, match="must use wss"):
@@ -98,6 +104,7 @@ def test_public_configuration_preserves_decimals_as_strings() -> None:
     assert payload["anchor_assets"] == ["USDT", "USDC", "USD1"]
     assert payload["okx_taker_commission"] == "0.0015"
     assert payload["binance_taker_commission"] == "0.001"
+    assert payload["bybit_taker_commission"] == "0.002"
 
 
 def test_rejects_okx_fee_below_public_regular_user_maximum() -> None:
@@ -108,3 +115,8 @@ def test_rejects_okx_fee_below_public_regular_user_maximum() -> None:
 def test_rejects_binance_fee_below_public_standard_rate() -> None:
     with pytest.raises(ValidationError, match=r"greater than or equal to 0.001"):
         Settings(binance_taker_commission="0.0009", _env_file=None)
+
+
+def test_rejects_bybit_fee_below_public_special_zone_ceiling() -> None:
+    with pytest.raises(ValidationError, match=r"greater than or equal to 0.002"):
+        Settings(bybit_taker_commission="0.001", _env_file=None)
