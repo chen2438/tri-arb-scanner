@@ -1,0 +1,223 @@
+:root {
+  color: #e9f3ef;
+  background: #07110f;
+  font-family: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 72% 18%, rgb(43 255 177 / 10%), transparent 34rem),
+    linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px),
+    #07110f;
+  background-size: auto, 42px 42px, 42px 42px, auto;
+}
+
+button,
+a {
+  color: inherit;
+}
+
+.shell {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  padding-bottom: 64px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 80px;
+  border-bottom: 1px solid rgb(201 255 235 / 12%);
+}
+
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  color: #f3fbf7;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid #58f5b9;
+  color: #58f5b9;
+  font-size: 18px;
+  transform: rotate(-8deg);
+}
+
+.connection {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  color: #81928c;
+  font: 12px "SFMono-Regular", Consolas, monospace;
+}
+
+.connection-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c7a760;
+  box-shadow: 0 0 0 4px rgb(199 167 96 / 12%);
+}
+
+.connection--online .connection-dot {
+  background: #58f5b9;
+  box-shadow: 0 0 0 4px rgb(88 245 185 / 12%);
+}
+
+.connection--offline .connection-dot {
+  background: #ff7d76;
+  box-shadow: 0 0 0 4px rgb(255 125 118 / 12%);
+}
+
+.hero {
+  max-width: 900px;
+  padding: 108px 0 70px;
+}
+
+.eyebrow,
+.panel-kicker {
+  margin: 0 0 22px;
+  color: #58f5b9;
+  font: 500 12px "SFMono-Regular", Consolas, monospace;
+  letter-spacing: 0.18em;
+}
+
+.hero h1 {
+  max-width: 800px;
+  margin: 0;
+  color: #f2f8f5;
+  font-size: clamp(44px, 6.6vw, 86px);
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  line-height: 1.08;
+}
+
+.hero h1 span {
+  color: #93a69f;
+}
+
+.hero-copy {
+  max-width: 680px;
+  margin: 34px 0 0;
+  color: #9eb0aa;
+  font-size: 17px;
+  line-height: 1.9;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid rgb(201 255 235 / 12%);
+  background: rgb(8 25 21 / 72%);
+  backdrop-filter: blur(14px);
+}
+
+.metrics article {
+  min-height: 164px;
+  padding: 26px;
+  border-right: 1px solid rgb(201 255 235 / 12%);
+}
+
+.metrics article:last-child {
+  border-right: 0;
+}
+
+.metrics span,
+.metrics small {
+  display: block;
+  color: #74867f;
+  font-size: 12px;
+}
+
+.metrics strong {
+  display: block;
+  margin: 18px 0 6px;
+  color: #f2f8f5;
+  font: 500 34px "SFMono-Regular", Consolas, monospace;
+}
+
+.empty-panel {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-top: 22px;
+  padding: 34px;
+  border: 1px dashed rgb(201 255 235 / 18%);
+  background: rgb(5 17 14 / 68%);
+}
+
+.empty-panel h2 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.empty-panel p:not(.panel-kicker) {
+  max-width: 650px;
+  margin: 0;
+  color: #81928c;
+  line-height: 1.7;
+}
+
+.phase-chip {
+  padding: 9px 12px;
+  border: 1px solid rgb(88 245 185 / 28%);
+  color: #58f5b9;
+  font: 11px "SFMono-Regular", Consolas, monospace;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .shell {
+    width: min(100% - 24px, 1180px);
+  }
+
+  .topbar {
+    height: 68px;
+  }
+
+  .connection {
+    font-size: 0;
+  }
+
+  .hero {
+    padding: 72px 0 48px;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .metrics article:nth-child(2) {
+    border-right: 0;
+  }
+
+  .metrics article:nth-child(-n + 2) {
+    border-bottom: 1px solid rgb(201 255 235 / 12%);
+  }
+
+  .empty-panel {
+    gap: 28px;
+    flex-direction: column;
+  }
+}

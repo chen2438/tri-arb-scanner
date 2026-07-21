@@ -9,7 +9,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 CONVENTIONAL_TITLE = re.compile(
     r"^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
     r"(?:\([a-z0-9._/-]+\))?!?: .+"

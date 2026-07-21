@@ -3,17 +3,22 @@
 > 本文件是项目的**唯一权威功能与架构文档**，记录当前能力、目标能力、接口和安全边界。
 > 尚未实现的内容必须明确标为规划，不能写成已提供的能力。
 >
-> 最后更新：2026-07-21（确定 MEXC 现货扫描器 v0.1 实施计划）
+> 最后更新：2026-07-21（完成里程碑 1 工程骨架）
 
 ## 1. 当前状态
 
-仓库目前处于规范和设计基线阶段，尚未实现行情接入、套利计算、API、CLI 或前端。当前已有能力仅为：
+仓库已完成里程碑 1 工程骨架。行情接入、套利计算和机会接口尚未实现。当前已有能力为：
 
-- 本文记录的 v0.1 产品、计算、接口和实施计划；
+- Python 3.12+ 项目、锁定依赖、`tri-arb doctor` / `tri-arb serve` CLI；
+- 严格 `TRI_ARB_` 配置、未知变量拒绝、localhost 绑定和上游 URL 安全校验；
+- FastAPI 存活、未就绪和只读配置接口，以及同源前端静态托管；
+- React/TypeScript/Vite 中文状态页，明确显示行情尚未接入；
+- Ruff、Pytest、Vitest、TypeScript、Vite 构建和提交消息 CI；
+- 本文记录的后续产品、计算、接口和实施计划；
 - `AGENTS.md` 中的 Agent 协作约定；
 - 本地及 CI 可复用的 Git 提交信息校验。
 
-下文除明确写为“当前已有”的内容外均为**规划能力**。
+下文除本节和里程碑 1 明确列出的内容外均为**规划能力**。
 
 ## 2. 产品目标与边界
 
@@ -317,10 +322,12 @@ market_age_ms, leg_skew_ms, legs[]
 
 ### 里程碑 1：工程骨架
 
-- 建立 Python 包、`pyproject.toml`、锁定依赖、`tri-arb` CLI 和严格配置模型；
-- 建立 React/TypeScript/Vite 前端、pnpm 锁文件及 FastAPI 同源静态托管；
-- 扩展 CI 为提交信息、Ruff、Pytest、Vitest、TypeScript 和生产构建；
-- 提供 `.env.example`，并完成 localhost 绑定限制。
+**状态：已完成。**
+
+- 已建立 Python 包、`pyproject.toml`、锁定依赖、`tri-arb` CLI 和严格配置模型；
+- 已建立 React/TypeScript/Vite 前端、pnpm 锁文件及 FastAPI 同源静态托管；
+- 已扩展 CI 为提交信息、Ruff、Pytest、Vitest、TypeScript 和生产构建；
+- 已提供 `.env.example`，并完成 localhost 绑定限制。
 
 ### 里程碑 2：领域模型与路径计算
 
@@ -390,11 +397,4 @@ market_age_ms, leg_skew_ms, legs[]
 pnpm --dir frontend test
 pnpm --dir frontend build
 python3 scripts/check_commit_messages.py --commit HEAD
-```
-
-在工程骨架尚未实现前，当前仅可执行提交策略校验：
-
-```bash
-python3 -m py_compile scripts/check_commit_messages.py
-python3 scripts/check_commit_messages.py --message-file <message-file>
 ```
